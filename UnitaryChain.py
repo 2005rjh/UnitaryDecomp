@@ -17,6 +17,7 @@ class UnitaryChain(object):
 		self.Us = [ np.eye(self.d, dtype=self.dtype), self.Utarget.copy() ]
 		self.check_consistency()
 
+
 	def check_consistency(self, tol=1e-14):
 		d = self.d
 		N = self.N
@@ -35,7 +36,27 @@ class UnitaryChain(object):
 			unitarity[i] = np.max(np.abs(U.conj().T @ U - IMx))		## determine how close each matrix is to unitary
 		#print(unitarity)
 
+
 	def U(self, n):
-		"""Returns the U at step n, where 0 <= n < N."""
+		"""Returns the unitary matrix U at step n, where 0 <= n < N."""
 		return self.Us[n+1] @ self.Us[n].conj().T
+
+
+	def subdivide_at_step(self, step, num_div):
+		assert num_div > 0
+		Us = self.Us
+		Ustart = Us[step]
+		Ustep = Us[step+1] @ Ustart.conj().T
+		##	Diagonalize matrix
+		v,w = np.linalg.eig(Ustep)
+		w_inv = np.linalg.inv(w)
+		##	At this stage: Ustep = w @ diag(v) @ inv(w)
+		arg_v = np.angle(v)
+		Us_insert = []
+		for i in range(1, num_div):
+			D = np.diag(np.exp(1j * arg_v * i / num_div))
+			Us_insert.append(w @ D @ w_inv)
+		self.Us = Us[:step+1] + Us_insert + Us[step+1:]
+		self.N += num_div - 1
+
 
