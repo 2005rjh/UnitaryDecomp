@@ -43,19 +43,22 @@ class UnitaryChain(object):
 
 
 	def subdivide_at_step(self, step, num_div):
+		"""Evenly subdivide the unitary at step (step) into num_div pieces.
+The resulting UnitaryChain has (num_div-1) extra steps."""
 		assert num_div > 0
 		Us = self.Us
 		Ustart = Us[step]
 		Ustep = Us[step+1] @ Ustart.conj().T
-		##	Diagonalize matrix
+	##	Diagonalize matrix
 		v,w = np.linalg.eig(Ustep)
-		w_inv = np.linalg.inv(w)
-		##	At this stage: Ustep = w @ diag(v) @ inv(w)
+	##	At this stage: Ustep = w @ diag(v) @ inv(w)
 		arg_v = np.angle(v)
 		Us_insert = []
+		invw_Ustart = np.linalg.inv(w) @ Ustart
 		for i in range(1, num_div):
 			D = np.diag(np.exp(1j * arg_v * i / num_div))
-			Us_insert.append(w @ D @ w_inv)
+			Us_insert.append(w @ D @ invw_Ustart)
+	##	Add extra matrices
 		self.Us = Us[:step+1] + Us_insert + Us[step+1:]
 		self.N += num_div - 1
 

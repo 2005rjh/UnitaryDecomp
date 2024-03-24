@@ -9,7 +9,8 @@ PauliZ = np.array([[1.,0],[0,-1.]])
 Hadamard = np.array([[1,1],[1,-1]], dtype=float) / np.sqrt(2)
 
 UC = UnitaryChain(Hadamard)
-UC.subdivide_at_step(0, 3)
+UC.subdivide_at_step(0, 3)		## split step 0 into 3 pieces
+UC.subdivide_at_step(1, 2)
 for i in range(UC.N):
 	print("Step", i, ":\n", UC.U(i))
 
