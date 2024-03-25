@@ -12,5 +12,3 @@ UC = UnitaryChain(Hadamard)
 UC.subdivide_at_step(0, 3)
 for i in range(UC.N):
 	print("Step", i, ":\n", UC.U(i))
-
-
