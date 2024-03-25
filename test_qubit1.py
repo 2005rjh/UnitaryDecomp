@@ -27,5 +27,18 @@ else:
 	RNG = np.random.RandomState(55)
 #for i in range(10):
 #	print( Gaussian_Hermitian(2, RNG=RNG) )
-print( random_small_Unitary(2, RNG=RNG, sigma=0.1) )
 
+## Try to update Vs[i] (steps i-1 and i)
+UC.backup_Vs()
+for i in [1]:
+	for itr in range(100):
+		old_w = UC.weight_total()
+		smallU = random_small_Unitary(2, RNG=RNG, sigma=0.1)
+		UC.Vs[i] = smallU @ UC.Vs[i]		# make sures to mulitply from the left
+		new_w = UC.weight_total()
+		if new_w > old_w:
+			print("{} -> {}  (reject)".format( old_w, new_w ))
+			UC.restore_from_backup_Vs()
+		else:
+			print("{} -> {}  (accept)".format( old_w, new_w ))
+			UC.backup_Vs()
