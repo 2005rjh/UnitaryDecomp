@@ -123,6 +123,11 @@ class UnitaryChain(object):
 		return self.weight_func[s](self.U(s))
 
 
+	def weight_total(self):
+		w = [ self.weight_at_step(s) for s in range(self.N) ] + [ self.weight_to_target() ]
+		return np.sum(w)
+
+
 	def subdivide_at_step(self, step, num_div):
 		"""Evenly subdivide the unitary at step (step) into num_div pieces.
 The resulting UnitaryChain has (num_div-1) extra steps."""
@@ -151,6 +156,11 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 	def zero_weight_U(cls, U):
 		return 0.
 
+##	to be overloaded
+	def weight_to_target(self):
+		return 0.
+
+
 
 ##################################################
 class qubit_unitary(UnitaryChain):
@@ -171,6 +181,7 @@ class qubit_unitary(UnitaryChain):
 		return self.coef['k'] * weight
 
 
+	## Default weighting function for qubit gates
 	def weight_of_U(self, U):
 		logU = log_unitary(U)
 		weight = ( np.abs(logU[0,0]**2) + np.abs(logU[1,1]**2) ) * self.coef['k']

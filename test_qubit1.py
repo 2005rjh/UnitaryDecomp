@@ -18,6 +18,7 @@ for i in range(UC.N):
 	print("Step {}:  (weight = {})\n{}".format( i, UC.weight_at_step(i), zero_real_if_close(UC.logU(i)) ))
 print("Final U:\n", zero_real_if_close(UC.Ufinal()))
 print("U to target:  (weight = {})\n{}".format( UC.weight_to_target(), zero_real_if_close(UC.U_to_target()) ))
+print("Total weight:", UC.weight_total())
 
 ##	Initialize random number generator
 if np.version.version >= '1.17.0':
