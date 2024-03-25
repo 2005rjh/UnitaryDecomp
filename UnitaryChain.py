@@ -155,6 +155,14 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 		self.check_consistency()
 
 
+	def backup_Vs(self):
+		self.backupVs = [ self.Vs[i].copy() for i in range(self.N+1) ]
+
+
+	def restore_from_backup_Vs(self):
+		self.Vs = [ self.backupVs[i].copy() for i in range(self.N+1) ]
+
+
 ##	function as placeholder
 	@classmethod
 	def zero_weight_U(cls, U):
