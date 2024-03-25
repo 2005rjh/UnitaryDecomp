@@ -27,5 +27,5 @@ else:
 	RNG = np.random.RandomState(55)
 #for i in range(10):
 #	print( Gaussian_Hermitian(2, RNG=RNG) )
-
+print( random_small_Unitary(2, RNG=RNG, sigma=0.1) )
 

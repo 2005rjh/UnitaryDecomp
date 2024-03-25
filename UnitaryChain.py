@@ -45,7 +45,11 @@ def Gaussian_Hermitian(n, RNG=None, sigma=1.0):
 	Mupper = np.triu(M, k=1) / np.sqrt(2)
 	Mlower = np.tril(M, k=-1) / np.sqrt(2)
 	return np.diag(np.diag(M)) + Mupper.transpose() + Mupper + 1j * Mlower - 1j * Mlower.transpose()
-	
+
+
+def random_small_Unitary(n, RNG=None, sigma=1.0):
+	return sp.linalg.expm(1j * Gaussian_Hermitian(n, RNG=RNG, sigma=sigma))
+
 
 
 ##################################################
@@ -164,6 +168,7 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 
 ##################################################
 class qubit_unitary(UnitaryChain):
+	"""Specialize to 1 single qubit."""
 
 	def __init__(self, Utarget):
 		super().__init__(Utarget)
