@@ -1,5 +1,6 @@
 import numpy as np
 import scipy as sp
+if np.version.version < '1.17.0': import scipy.linalg
 
 ## Note: we always use tabs for indentation
 
@@ -102,6 +103,8 @@ class UnitaryChain(object):
 			raise ArithmeticError("UnitaryChain.check_consistency:  {} > tol ({})".format( output['tol'], tol ))
 		return output
 
+	##################################################
+	##	Retrieval
 
 	def Ufinal(self):
 		return self.Vs[self.N]
@@ -131,6 +134,19 @@ class UnitaryChain(object):
 		w = [ self.weight_at_step(s) for s in range(self.N) ] + [ self.weight_to_target() ]
 		return np.sum(w)
 
+
+	def str(self):
+		s = ""
+		for i in range(self.N):
+			s += "Step {}:  (weight = {})\n".format( i, self.weight_at_step(i) ) + str(zero_real_if_close(self.logU(i))) + "\n"
+			s += "Final U:\n" + str(zero_real_if_close(self.Ufinal())) + "\n"
+			s += "U to target:  (weight = {})\n".format( self.weight_to_target() ) + str(zero_real_if_close(self.U_to_target())) + "\n"
+			s += "Total weight: {}\n".format( self.weight_total() )
+		return s
+
+
+	##################################################
+	##
 
 	def subdivide_at_step(self, step, num_div):
 		"""Evenly subdivide the unitary at step (step) into num_div pieces.
