@@ -192,7 +192,12 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 
 ##################################################
 class qubit_unitary(UnitaryChain):
-	"""Specialize to 1 single qubit."""
+	"""Specialize to 1 single qubit.
+
+coefficients:
+	Rabi: the weight given to an X/Y (off diagonal) drives
+	k: the weight given to I,X (diagonal) drives
+"""
 
 	def __init__(self, Utarget):
 		super().__init__(Utarget)
