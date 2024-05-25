@@ -1,6 +1,30 @@
 import numpy as np
 from UnitaryChain import *
 
+def optimize(UC, sub, sigma):
+    print("subdivisions: {}\tsigma: {}".format(sub, sigma))
+    UC.subdivide_at_step(0, sub) # subdividing steps beyond 0 reduces weight by bug
+    print(UC.str())
+    UC.backup_Vs()
+    for itr in range(3000):
+    	# print("------STEP {}------".format(i))
+    	for i in range(1, UC.N+1):
+    		old_w = UC.weight_total()
+    		smallU = random_small_Unitary(2, RNG=RNG, sigma=sigma)
+    		UC.Vs[i] = smallU @ UC.Vs[i]		# make sures to mulitply from the left
+    		new_w = UC.weight_total()
+    		if new_w > old_w:
+    			# print("{} -> {}  (reject)".format( old_w, new_w ))
+    			UC.restore_from_backup_Vs()
+    		else:
+    			# print("{} -> {}  (accept)".format( old_w, new_w ))
+    			UC.backup_Vs()
+    	#print("FINAL WEIGHT {}".format(UC.weight_at_step(i-1)))
+    	#print("WEIGHT LIST: {}".format(UC.weight_list()))
+    
+    UC.check_consistency()
+    print(UC.str())
+    return UC
 
 I2 = np.eye(2, dtype=float)
 PauliX = np.array([[0,1.],[1.,0]])
@@ -11,14 +35,6 @@ Hadamard = np.array([[1,1],[1,-1]], dtype=float) / np.sqrt(2)
 np.set_printoptions(precision=4, linewidth=10000, suppress=True)
 
 ##	Target the Hadamard gate
-UC = qubit_unitary(Hadamard)
-UC.subdivide_at_step(0, 3)		## split step 0 into 3 pieces
-UC.subdivide_at_step(1, 2)		## then, split step 1 into 2 pieces
-for i in range(UC.N):
-	print("Step {}:  (weight = {})\n{}".format( i, UC.weight_at_step(i), zero_real_if_close(UC.logU(i)) ))
-print("Final U:\n", zero_real_if_close(UC.Ufinal()))
-print("U to target:  (weight = {})\n{}".format( UC.weight_to_target(), zero_real_if_close(UC.U_to_target()) ))
-print("Total weight:", UC.weight_total())
 
 ##	Initialize random number generator
 if np.version.version >= '1.17.0':
@@ -28,35 +44,26 @@ else:
 #for i in range(10):
 #	print( Gaussian_Hermitian(2, RNG=RNG) )
 
-## Try to update Vs[i] (steps i-1 and i)
-UC.backup_Vs()
-total = 0;
-for i in range(UC.N):
-	print("------STEP {}------".format(i))
-	for itr in range(100):
-		old_w = UC.weight_at_step(i)
-		smallU = random_small_Unitary(2, RNG=RNG, sigma=0.1)
-		UC.Vs[i] = smallU @ UC.Vs[i]		# make sures to mulitply from the left
-		new_w = UC.weight_at_step(i)
-		if new_w > old_w:
-			print("{} -> {}  (reject)".format( old_w, new_w ))
-			UC.restore_from_backup_Vs()
-		else:
-			print("{} -> {}  (accept)".format( old_w, new_w ))
-			UC.backup_Vs()
-	print("FINAL WEIGHT {}".format(UC.weight_at_step(i)))
-	total += UC.weight_at_step(i)
-total += UC.weight_to_target()
+# Optimize by subdivisions
+mini = qubit_unitary(Hadamard)
+minix = 0
+for x in range(1, 5):
+    UC = qubit_unitary(Hadamard)
+    new = optimize(UC, x, 0.05)
+    if mini.weight_total() > new.weight_total():
+        mini = new
+        minix = x
+print("\n\nThe smallest configuration is:\n", mini.str(), "\nat {} subdivisions".format(minix))
 
-print("theoretical final weight: {}".format(total))
-for i in range(UC.N):
-	print("Step {}: (weight: {})\n{}\n".format(i, UC.weight_at_step(i), UC.U(i)))
-
-print("U to target:  (weight = {})\n{}".format( UC.weight_to_target(), zero_real_if_close(UC.U_to_target()) ))
-print("\nFinal U:\n{}\nweight: {}".format(zero_real_if_close(UC.Ufinal()), UC.weight_total()))
-
-
-first = np.matmul(UC.Vs[0], UC.Vs[1])
-first = np.matmul(first, UC.Vs[2])
-first = np.matmul(first, UC.Vs[3])
-print(first)
+mini = qubit_unitary(Hadamard)
+miniy = 0
+for y in range(1, 10):
+    UC = qubit_unitary(Hadamard)
+    new = optimize(UC, minix, y/100)
+    if mini.weight_total() > new.weight_total():
+        mini = new
+        miniy = y
+print("\n\nThe smallest configuration is:\n", mini.str(), "\nat sigma={}".format(miniy/100))
+ 
+# UC.subdivide_at_step(0, 2)		## split step 0 into 3 pieces
+# UC.subdivide_at_step(1, 4)		## then, split step 1 into 2 pieces
