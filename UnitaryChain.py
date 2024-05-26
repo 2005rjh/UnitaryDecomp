@@ -33,6 +33,7 @@ def Frob_norm(M):
 
 
 def log_unitary(U):
+	"""Returns (1/i) log(U), a Hermitian matrix."""
 	##	Diagonalize matrix:  Ustep = w @ diag(v) @ inv(w)
 	v,w = np.linalg.eig(U)
 	arg_v = np.angle(v)
@@ -132,7 +133,7 @@ class UnitaryChain(object):
 
 
 	def U_to_target(self, V=None):
-		"""Return the unitary needed to reach Utarget.  If V is None, then use Ufinal."""
+		"""Return the unitary needed to reach Utarget from V.  If V is None, then use Ufinal."""
 		if V is None: V = self.Vs[self.N]
 		return self.Utarget @ V.conj().T
 
@@ -229,13 +230,60 @@ coefficients:
 		return self.coef['k'] * weight
 
 
-	## Default weighting function for qubit gates
+	## default weighting function for qubit gates
 	def weight_of_U(self, U):
 		logU = log_unitary(U)
 		weight = ( np.abs(logU[0,0]**2) + np.abs(logU[1,1]**2) ) * self.coef['k']
 		weight += np.abs(logU[0,1]**2) * self.coef['Rabi']
 		return weight
 
+
+
+##################################################
+class two_qubits_unitary(UnitaryChain):
+	"""Specialize to 2 qubits.
+
+coefficients:
+	Rabi1: the weight given to an single qubit X/Y drives (assigns Rabi1 to half Rabi period)
+	Rabi2: the weight given to pair drives (assigns2 Rabi2 to half Rabi period of conversion or gain)
+	penalty: the weight given to other drives
+"""
+	Id2 = np.eye(2, dtype=float)
+	PX = np.array([[0,1.],[1.,0]])
+	PY = np.array([[0,-1j],[1j,0]])
+	PZ = np.array([[1.,0],[0,-1.]])
+	PauliList = [Id2,PX,PY,PZ]
+
+	def __init__(self, Utarget):
+		super().__init__(Utarget)
+		assert self.d == 4
+		self.coef = {'Rabi1':0.1, 'Rabi2':1, 'penalty':10.}
+		self.weight_func = [ self.weight_of_U ] * self.N
+		if not hasattr(two_qubits_unitary, 'P2list'):
+			#two_qubits_unitary.P2list = [ [ np.kron(P1,P2) for P2 in two_qubits_unitary.PauliList ] for P1 in two_qubits_unitary.PauliList ]
+			##	list:  11, 1X, 1Y, 1Z, X1, XX, XY, ..., ZY, ZZ
+			two_qubits_unitary.P2list = [ np.kron(P1,P2) for P1 in two_qubits_unitary.PauliList for P2 in two_qubits_unitary.PauliList ]
+			assert np.array(two_qubits_unitary.P2list).shape == (16,4,4)
+		self.check_consistency()
+
+	def weight_to_target(self, V=None):
+		"""Provides the weight of U_to_target.  This function measures how far U_to_target is to a phase gate on either qubit."""
+		Utt = self.U_to_target(V=V)
+		weight = Frob_norm(np.triu(Utt, k=1) + np.tril(Utt, k=-1))	# off diagonal term
+		weight += Frob_norm(np.abs(np.diag(Utt)) - 1)		# measures how far the diagonal terms are to pure phases
+		weight += np.abs( Utt[0,0] * Utt[1,1] - Utt[0,1] * Utt[1,0] )**2		# check how close the diagonal is to a Kronecker product
+		return self.coef['penalty'] * weight
+
+	## default weighting function for qubit gates
+	def weight_of_U(self, U):
+		logU = log_unitary(U)		# returns a Hermitian matrix
+		logUT = logU.transpose()
+		##	Pauli components: Pcomp[i] = tr(P2[i] . logU) / 2pi, or logU = (pi/2) sum_i Pcomp[i] P2[i]
+		Pcomps = np.array([ np.sum(P * logUT) for P in two_qubits_unitary.P2list ]).real / (2 * np.pi)
+		R1, R2, p = self.coef['Rabi1'], self.coef['Rabi2'], self.coef['penalty']
+		wcomps = np.array([ p, R1, R1, p, R1, 2*R2, 2*R2, p, R1, 2*R2, 2*R2, p, p, p, p, p ])
+		return np.sum(Pcomps**2 * wcomps)
+		
 
 
 ##################################################

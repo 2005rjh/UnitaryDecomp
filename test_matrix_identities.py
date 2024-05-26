@@ -5,7 +5,7 @@ from UnitaryChain import *
 Mx3list = [ np.arange(9).reshape(3,3), np.array([[2,0,-1],[1,1,-2],[0,-1,3]]), np.arange(-5,4).reshape(3,3).transpose(), np.array([[0,0,-1],[1,1.5,0],[0,0.5,0.5]]) ]
 
 def check_adjoint_op(par):
-	M1i, M2i, tol = par 
+	M1i, M2i, tol = par
 	print("check_adjoint_op({}, {})".format(M1i,M2i))
 	M1 = Mx3list[M1i]
 	M2 = Mx3list[M2i]
