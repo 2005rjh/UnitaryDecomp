@@ -145,6 +145,9 @@ class UnitaryChain(object):
 		w = [ self.weight_at_step(s) for s in range(self.N) ] + [ self.weight_to_target() ]
 		return np.sum(w)
 
+	def weight_list(self):
+		w = [self.weight_at_step(s) for s in range(self.N)] + [ self.weight_to_target() ]
+		return np.array(w);
 
 	def str(self):
 		s = ""
