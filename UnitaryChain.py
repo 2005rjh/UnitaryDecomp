@@ -205,7 +205,7 @@ coefficients:
 	def __init__(self, Utarget):
 		super().__init__(Utarget)
 		assert self.d == 2
-		self.coef = {'Rabi':1., 'k':10.}
+		self.coef = {'Rabi':1., 'k':15.}
 		self.weight_func = [ self.weight_of_U ] * self.N
 		self.check_consistency()
 
