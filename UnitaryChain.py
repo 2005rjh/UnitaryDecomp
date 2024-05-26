@@ -52,6 +52,17 @@ def random_small_Unitary(n, RNG=None, sigma=1.0):
 	return sp.linalg.expm(1j * Gaussian_Hermitian(n, RNG=RNG, sigma=sigma))
 
 
+##################################################
+def adjoint_op_MxRep(X):
+	"""Returns adjoint[X] in the matrix reprensentation (dim = n^2).  X is a n*n matrix."""
+	n = len(X)
+	assert X.shape == (n,n)
+	Id = np.identity(n, dtype=X.dtype)
+	return np.kron(X, Id) - np.kron(Id, X.transpose())
+
+
+## use scipy.special.exprel
+
 
 ##################################################
 class UnitaryChain(object):
