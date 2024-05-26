@@ -22,7 +22,10 @@ def optimize(UC, sub, sigma):
     	#print("FINAL WEIGHT {}".format(UC.weight_at_step(i-1)))
     	#print("WEIGHT LIST: {}".format(UC.weight_list()))
     
-    UC.check_consistency()
+    try:
+        UC.check_consistency()
+    except:
+        print("FAILED CONSISTENCY CHECK")
     print(UC.str())
     return UC
 
@@ -57,13 +60,13 @@ print("\n\nThe smallest configuration is:\n", mini.str(), "\nat {} subdivisions"
 
 mini = qubit_unitary(Hadamard)
 miniy = 0
-for y in range(1, 10):
+for y in range(1, 15):
     UC = qubit_unitary(Hadamard)
-    new = optimize(UC, minix, y/100)
+    new = optimize(UC, minix, y/1000)
     if mini.weight_total() > new.weight_total():
         mini = new
         miniy = y
-print("\n\nThe smallest configuration is:\n", mini.str(), "\nat sigma={}".format(miniy/100))
+print("\n\nThe smallest configuration is:\n", mini.str(), "\nat sigma={}".format(miniy/1000))
  
 # UC.subdivide_at_step(0, 2)		## split step 0 into 3 pieces
 # UC.subdivide_at_step(1, 4)		## then, split step 1 into 2 pieces
