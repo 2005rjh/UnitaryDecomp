@@ -154,9 +154,9 @@ class UnitaryChain(object):
 		s = ""
 		for i in range(self.N):
 			s += "Step {}:  (weight = {})\n".format( i, self.weight_at_step(i) ) + str(zero_real_if_close(self.logU(i))) + "\n"
-			s += "Final U:\n" + str(zero_real_if_close(self.Ufinal())) + "\n"
-			s += "U to target:  (weight = {})\n".format( self.weight_to_target() ) + str(zero_real_if_close(self.U_to_target())) + "\n"
-			s += "Total weight: {}\n".format( self.weight_total() )
+		s += "Final U:\n" + str(zero_real_if_close(self.Ufinal())) + "\n"
+		s += "U to target:  (weight = {})\n".format( self.weight_to_target() ) + str(zero_real_if_close(self.U_to_target())) + "\n"
+		s += "Total weight: {}\n".format( self.weight_total() )
 		return s
 
 
@@ -217,7 +217,7 @@ coefficients:
 	def __init__(self, Utarget):
 		super().__init__(Utarget)
 		assert self.d == 2
-		self.coef = {'Rabi':1., 'k':10.}
+		self.coef = {'Rabi':1., 'k':15.}
 		self.weight_func = [ self.weight_of_U ] * self.N
 		self.check_consistency()
 
