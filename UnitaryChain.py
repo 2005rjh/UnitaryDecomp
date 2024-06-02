@@ -35,7 +35,7 @@ def Frob_norm(M):
 def log_unitary(U):
 	"""Returns (1/i) log(U), a Hermitian matrix."""
 	##	Diagonalize matrix:  Ustep = w @ diag(v) @ inv(w)
-	v,w = np.linalg.eig(U)
+	v,w = np.linalg.eig(U)		# TODO, use scipy.linalg.schur
 	arg_v = np.angle(v)
 	log_U = w @ np.diag(arg_v) @ np.linalg.inv(w)
 	return log_U
@@ -62,7 +62,23 @@ def adjoint_op_MxRep(X):
 	return np.kron(X, Id) - np.kron(Id, X.transpose())
 
 
-## use scipy.special.exprel
+def Mx_exprel(X):
+	"""Compute [exp(X)-1] X^{-1} for a matrix X."""
+	n = len(X)
+	assert X.shape == (n,n)
+	u,v = np.linalg.eig(X)		# X = v @ diag(u) @ inv(v)
+	## scipy.special.exprel only takes in real numbers
+	exprel_u = np.sinc(0.5j * u / np.pi) * np.exp(u / 2)
+	return v @ np.diag(exprel_u) @ np.linalg.inv(v)
+
+def Mx_iexprel(X):
+	"""Compute [1-exp(-X)] X^{-1} for a matrix X."""
+	n = len(X)
+	assert X.shape == (n,n)
+	u,v = np.linalg.eig(X)		# X = v @ diag(u) @ inv(v)
+	## scipy.special.exprel only takes in real numbers
+	exprel_u = np.sinc(0.5j * u / np.pi) * np.exp(-u / 2)
+	return v @ np.diag(exprel_u) @ np.linalg.inv(v)
 
 
 ##################################################
@@ -171,7 +187,7 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 		Vstart = Vs[step]
 		Ustep = Vs[step+1] @ Vstart.conj().T
 	##	Diagonalize matrix:  Ustep = w @ diag(v) @ inv(w)
-		v,w = np.linalg.eig(Ustep)
+		v,w = np.linalg.eig(Ustep)		# TODO, use scipy.linalg.schur
 		arg_v = np.angle(v)
 		Vs_insert = []
 		invw_Vstart = np.linalg.inv(w) @ Vstart
