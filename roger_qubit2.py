@@ -20,8 +20,13 @@ np.set_printoptions(precision=4, linewidth=10000, suppress=True)
 #UC = two_qubits_unitary(np.kron(PauliX,I2)*1j)		# Rabi 1
 #UC = two_qubits_unitary(np.kron(I2,PauliY)*1j)		# Rabi 2
 #UC = two_qubits_unitary(np.kron(PauliX,PauliX)*1j)		# conv + gain
-UC = two_qubits_unitary(CntrlZ)
+UC = two_qubits_unitary(CntrlX)
+UC.subdivide_at_step(0, 2)
 print(UC.str())
+
+if 1:
+	print(UC.U_decomp(0))
+	print(UC.U_decomp(-1))
 
 ##	Initialize random number generator
 if np.version.version >= '1.17.0':
@@ -31,18 +36,19 @@ else:
 #for i in range(10):
 #	print( Gaussian_Hermitian(2, RNG=RNG) )
 
-## Try to update Vs[i] (steps i-1 and i)
-UC.backup_Vs()
-for i in [1]:
-	for itr in range(30):
-		old_w = UC.weight_total()
-		smallU = random_small_Unitary(UC.d, RNG=RNG, sigma=0.05)
-		UC.Vs[i] = smallU @ UC.Vs[i]		# make sures to mulitply from the left
-		new_w = UC.weight_total()
-		if new_w > old_w:
-#			print("{} -> {}  (reject)".format( old_w, new_w ))
-			UC.restore_from_backup_Vs()
-		else:
-#			print("{} -> {}  (accept)".format( old_w, new_w ))
-			UC.backup_Vs()
-print(UC.str())
+if 0:
+	## Try to update Vs[i] (steps i-1 and i)
+	UC.backup_Vs()
+	for i in [1]:
+		for itr in range(30):
+			old_w = UC.weight_total()
+			smallU = random_small_Unitary(UC.d, RNG=RNG, sigma=0.05)
+			UC.Vs[i] = smallU @ UC.Vs[i]		# make sures to mulitply from the left
+			new_w = UC.weight_total()
+			if new_w > old_w:
+	#			print("{} -> {}  (reject)".format( old_w, new_w ))
+				UC.restore_from_backup_Vs()
+			else:
+	#			print("{} -> {}  (accept)".format( old_w, new_w ))
+				UC.backup_Vs()
+	print(UC.str())
