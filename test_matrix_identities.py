@@ -21,7 +21,7 @@ Mx3list = [
 	np.arange(9).reshape(3,3),
 	np.array([[2,0,-1],[1,1,-2],[0,-1,3]]),
 	np.arange(-5,4).reshape(3,3).transpose(),
-	np.array([[0,0,-1],[1,1.5,0],[0,0.5,0.5]]),
+	np.array([[0,0,-1],[1,1.5,0],[0,0.5j,0.5]]),
 	np.array([[0,0,-1],[1,0,0],[0,0,0]]),
 	]
 MxLists = [None, None, Mx2list, Mx3list]
@@ -60,12 +60,13 @@ def test_DexpM():
 		for j in range(1,4):
 			yield check_DexpM, (3, i, j, [1e-4, 1e-5, 1e-6, 1e-7], 1.2)
 	yield check_DexpM, (2, 1, 3, [1e-4, 1e-5, 1e-6, 1e-7], 1.2)
+	yield check_DexpM, (2, 2, 1, [1e-4, 1e-5, 1e-6, 1e-7], 1.2)
 
 def check_DexpM(par):
 	"""Compare U = exp(X + s*dX) with 1st order formula.
-	That is, left inverse exp(-X) U to iexprel(ad_X) s*dX,
+	That is, left inverse exp(-X) U to nexprel(ad_X) s*dX,
 	and right inverse U exp(-X) to exprel(ad_X) s*dX.
-	functions tested:  UnitaryChain.adjoint_op_MxRep, UnitaryChain.Mx_exprel , UnitaryChain.Mx_iexprel
+	functions tested:  UnitaryChain.adjoint_op_MxRep, UnitaryChain.Mx_exprel , UnitaryChain.Mx_nexprel
 """
 	Msize, Xi, dXi, dscales, reltol = par
 	print("check_DexpM: {}x{}, ({},{}), ds={}".format(Msize,Msize,Xi,dXi,dscales))
@@ -75,7 +76,7 @@ def check_DexpM(par):
 	Id = np.eye(Msize)
 	adX = adjoint_op_MxRep(X)
 	exp_adX = Mx_exprel(adX)
-	iexp_adX = Mx_iexprel(adX)
+	iexp_adX = Mx_nexprel(adX)
 	estim_2nd_order_size = np.max(np.abs(dX))**2 * np.max(np.abs(exp_adX) + np.abs(iexp_adX))
 	for s in dscales:
 		U = sp.linalg.expm(X + dX * s)
