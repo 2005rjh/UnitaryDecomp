@@ -4,6 +4,7 @@ from UnitaryChain import *
 def optimize(UC, sub, sigma):
     print("subdivisions: {}\tsigma: {}".format(sub, sigma))
     UC.subdivide_at_step(0, sub) # subdividing steps beyond 0 reduces weight by bug
+    print(UC.Vs)
     print(UC.str())
     UC.backup_Vs()
     for itr in range(3000):
@@ -27,6 +28,7 @@ def optimize(UC, sub, sigma):
     except:
         print("FAILED CONSISTENCY CHECK")
     print(UC.str())
+    print(UC.Vs)
     return UC
 
 I2 = np.eye(2, dtype=float)
@@ -48,7 +50,7 @@ else:
 #	print( Gaussian_Hermitian(2, RNG=RNG) )
 
 # Optimize by subdivisions
-
+"""
 mini = qubit_unitary(Hadamard)
 minix = 0
 for x in range(1, 5):
@@ -58,7 +60,7 @@ for x in range(1, 5):
         mini = new
         minix = x
 print("\n\nThe smallest configuration is:\n", mini.str(), "\nat {} subdivisions".format(minix))
-
+"""
 
 # Optimize by sigma
 """
@@ -72,7 +74,7 @@ for y in range(1, 15):
         miniy = y
 print("\n\nThe smallest configuration is:\n", mini.str(), "\nat sigma={}".format(miniy/1000))
 """
-
+"""
 # Optimize subdivisions by distance
 mini = optimize(qubit_unitary(Hadamard), 1, 0.013)
 minix = 1
@@ -83,7 +85,7 @@ for x in range(2, 6):
         mini = new
         minix = x
 print("\n\nThe best approximation is:\n", mini.str(), "\nat {} subdivisions".format(minix))
-
- 
+"""
+optimize(qubit_unitary(Hadamard), 2, 0.05)
 # UC.subdivide_at_step(0, 2)		## split step 0 into 3 pieces
 # UC.subdivide_at_step(1, 4)		## then, split step 1 into 2 pieces
