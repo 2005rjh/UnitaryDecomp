@@ -113,15 +113,16 @@ class UnitaryChain(object):
 
 		self.dtype = complex		## work everything out with complex numbers
 		self.Vs = [ np.eye(self.d, dtype=self.dtype), self.Utarget.copy() ]
-		self.cache = { 'U_decomp':{}, 'weights2':{} }
-		self.check_consistency()		#TODO optional
+		self.reset_cache()
+	##	specify UnitaryChain class because this __init__ is called by subclass' initializers, which at this point have not finished yet and so this object may not be subclass-consistent.
+		UnitaryChain.check_consistency(self)		#optional
 
 
 	def copy(self):
 		"""Return a deep copy of the current object."""
 		c = type(self)(self.Utarget)
 		self._deepcopy_to_c(c)
-		c.check_consistency()		#TODO optional
+		c.check_consistency()		#optional
 		return c
 
 	def _deepcopy_to_c(self, c):
@@ -130,8 +131,8 @@ class UnitaryChain(object):
 		c.dtype = self.dtype
 		c.Vs = [ self.Vs[i].copy() for i in range(N+1) ]
 		c.cache['U_decomp'] = self.cache['U_decomp'].copy()
+		##	somehow, recompuoting the weights is faster than copying the 'weights2' dictionary
 		#c.cache['weights2'] = self.cache['weights2'].copy()
-##	somehow, recompuoting the weights is faster than copying the 'weights2' dictionary
 		return c
 
 
@@ -162,16 +163,19 @@ class UnitaryChain(object):
 			assert isinstance(V, np.ndarray) and V.shape == (d,d)
 			if i == 0:
 				output['Vs unitarity'][0] = compareMx( V , IdMx )
-			else:
-				output['Vs unitarity'][i] = compareMx( V.conj().T @ V , IdMx )		## determine how close each matrix is to unitary
-				Ustep = V @ Vs[i-1].conj().T
-				try:		## test that Ustep = Z @ e^{i v) @ Z^dag
-					Uv, UZ = cache['U_decomp'][i-1]
-					## todo, check UZ is unitary, Uv real
-					output['U_decomp err'][i-1] = compareMx( UZ @ np.diag(np.exp(1j * Uv)) @ UZ.conj().T , Ustep )
-				except KeyError:
-					pass
-		#print(unitarity)
+				continue
+			##	i > 0 from now on
+			output['Vs unitarity'][i] = compareMx( V.conj().T @ V , IdMx )		## determine how close each matrix is to unitary
+			Ustep = V @ Vs[i-1].conj().T
+			try:		## test that Ustep = Z @ e^{i v) @ Z^dag
+				Uv, UZ = cache['U_decomp'][i-1]
+				assert isinstance(Uv, np.ndarray) and Uv.shape == (d,)
+				assert Uv.dtype == float
+				assert isinstance(UZ, np.ndarray) and UZ.shape == (d,d)
+				output['U_decomp err'][i-1] = compareMx( UZ.conj().T @ UZ , IdMx )
+				output['U_decomp err'][i-1] += compareMx( UZ @ np.diag(np.exp(1j * Uv)) @ UZ.conj().T , Ustep )
+			except KeyError:
+				pass
 	##
 		output['err'] = max( output['Utarget unitarity'], np.max(output['Vs unitarity']), np.max(output['U_decomp err']), 0 )
 		if type(tol) == float and output['err'] > tol:
@@ -205,35 +209,44 @@ class UnitaryChain(object):
 
 
 	##	weights
-	def weight_at_step(self, s):
+	def weight2_at_step(self, s):
 		if s in self.cache['weights2']: return self.cache['weights2'][s]	# look up in cache
 		w2 = self.compute_weight2_at_step(s)
 		self.cache['weights2'][s] = w2	# cache value
 		return w2
 
+	def weight2_to_target(self):
+		#TODO add to cache
+		return self.compute_weight2_to_target(self.U_to_target())
+
 	def compute_weight2_at_step(self, s):
-		raise NotImplementedError		# to be overloaded
+		raise NotImplementedError		# must be overloaded
 
-	def weight_to_target(self):
-		raise NotImplementedError		# to be overloaded
+	def compute_weight2_to_target(self, U2t):
+		raise NotImplementedError		# must be overloaded
 
-	def weight_list(self):
-		w = [ self.weight_at_step(s) for s in range(self.N) ] + [ self.weight_to_target() ]
+	def weight2_list(self):
+		w = [ self.weight2_at_step(s) for s in range(self.N) ] + [ self.weight2_to_target() ]
 		return np.array(w);
 
-	def weight_total(self):
-		w = [ self.weight_at_step(s) for s in range(self.N) ] + [ self.weight_to_target() ]
+	def weight_total(self):		# returns weight2_total
+		w = [ self.weight2_at_step(s) for s in range(self.N) ] + [ self.weight2_to_target() ]
 		return np.sum(w)
+
+	def weight1_total(self):
+		w = [ self.weight2_at_step(s) for s in range(self.N) ] + [ self.weight2_to_target() ]
+		return np.sum(np.sqrt(w))
 
 
 	##	human-readable-ish output
 	def str(self):
 		s = ""
 		for i in range(self.N):
-			s += "Step {}:  (weight = {})\n".format( i, self.weight_at_step(i) ) + str(zero_real_if_close(self.logU(i))) + "\n"
+			s += "Step {}:  (weight2 = {})\n".format( i, self.weight2_at_step(i) ) + str(zero_real_if_close(self.logU(i))) + "\n"
 		s += "Final U:\n" + str(zero_real_if_close(self.Ufinal())) + "\n"
-		s += "U to target:  (weight = {})\n".format( self.weight_to_target() ) + str(zero_real_if_close(self.U_to_target())) + "\n"
-		s += "Total weight: {}\n".format( self.weight_total() )
+		s += "U to target:  (weight2 = {})\n".format( self.weight2_to_target() ) + str(zero_real_if_close(self.U_to_target())) + "\n"
+		s += "Total weight1: {}\n".format( self.weight1_total() )
+		s += "Total weight2: {}\n".format( self.weight_total() )
 		return s
 
 
@@ -253,13 +266,16 @@ s is an integer between 1 <= s <= N.  This will alter steps s-1 and s."""
 		self.Vs[s] = U @ self.Vs[s]
 		self.invalidate_cache_at_step(s - 1); self.invalidate_cache_at_step(s)
 
-	def apply_H_to_V_at_step(self, s, H):
+	def apply_expiH_to_V_at_step(self, s, H):
 		"""Update Vs[s] -> exp[iH] Vs[s], where H is a d*d Hermitian matrix.
 s is an integer between 1 <= s <= N.  This will alter steps s-1 and s."""
 		A = 0.5j * ( H + np.conj(np.transpose(H)) )
 		self.Vs[s] = sp.linalg.expm(A) @ self.Vs[s]
 		self.invalidate_cache_at_step(s - 1); self.invalidate_cache_at_step(s)
 
+
+	def reset_cache(self):
+		self.cache = { 'U_decomp':{}, 'weights2':{} }
 
 	def invalidate_cache_at_step(self, s):
 		#TODO documentatation
@@ -287,6 +303,7 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 		self.Vs = Vs[:step+1] + Vs_insert + Vs[step+1:]
 		self.N += num_div - 1
 		#TODO, update cache
+		self.reset_cache()
 		self.check_consistency()
 
 
@@ -303,7 +320,7 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 	##	Tools to compute weights and derivatives
 
 	def U_decomp(self, s):
-		"""Computes the spectral decompisition of the unitary matrix U at step s.
+		"""Computes the spectral decomposition of the unitary matrix U at step s.
 If 0 <= s < N, use U at that step.  If s == -1, use U_to_target instead.
 
 Returns pair v, W.
@@ -330,16 +347,137 @@ exp[i v] are the eigenvalues of U, W are the eigenvectors, such that U = Z @ np.
 		"""Determines the 1st order change of (-i)logU (at step s) from altering Vs[s+1]."""
 		raise NotImplementedError
 
-
+	##	End of UnitaryChain class
 	##################################################
 
 
 
-##################################################
-##	TODO: UnitaryChain_MxCompWeight
+################################################################################
+class UnitaryChain_MxCompWeight(UnitaryChain):
+	"""An abstract subclass of UnitaryChain when the weight2's of each step are all quadratic functions of logU.
+
+Assumes (a) the weight2 of each step is the same function,
+(b) weight2_to_target enforces U_to_target to be diagonal,
+and (c) ... [something about U2t_DiagTests]
+
+Required attributes:
+	MxComp_list:  a list of matrices
+	ConjMxComp_list:  a list of matrices conjugate to MxComp_list (under Frobenius norm)
+	MxComp_weights2:
+	U2t_DiagTests:
+Also the class will have to overload _deepcopy_to_c() to make sure these attributes are copied.
+
+Formula:
+	MxComps_i = 2 / pi * Tr[ ConjMxComp_list[i] . logU ]
+	weight2(Ustep) = sum_i MxComp_weights2_i MxComps_i^2
+	weight2(U2target) = ODpenalty + ...
+"""
+
+	def check_consistency(self, tol=1e-13):
+		output = super().check_consistency(tol=tol)
+		d = self.d
+		MxComp_list = self.MxComp_list
+		ConjMxComp_list = self.ConjMxComp_list
+		MxComp_weights2 = self.MxComp_weights2
+		U2t_DiagTests = self.U2t_DiagTests
+		nMx = d**2
+	##	check MxComp_weights2
+		assert isinstance(MxComp_weights2, np.ndarray) and MxComp_weights2.shape == (nMx,)
+		assert MxComp_weights2.dtype == float
+	##	check MxComp_list and ConjMxComp_list
+		assert isinstance(MxComp_list, np.ndarray) and MxComp_list.shape == (nMx, d, d)
+		assert isinstance(ConjMxComp_list, np.ndarray) and MxComp_list.shape == (nMx, d, d)
+		#TODO, compute MxComp_compat
+	##	check U2t_DiagTests
+		assert isinstance(U2t_DiagTests, list)
+		for chk in U2t_DiagTests:
+			assert isinstance(chk, tuple) and len(chk) == 4
+			#TODO check everything is within [0,d)
+	##
+		#TODO, add MxComp_compat
+		output['err'] = max( output['Utarget unitarity'], np.max(output['Vs unitarity']), np.max(output['U_decomp err']), 0 )
+		if type(tol) == float and output['err'] > tol:
+			raise ArithmeticError("UnitaryChain_MxCompWeight.check_consistency:  {} > tol ({})".format( output['err'], tol ))
+		return output
 
 
-##################################################
+	def compute_weight2_at_step(self, s):
+		logU = self.logU(s)		# expects a Hermitian matrix
+		d = self.d
+		logUT = logU.conj()
+		MxComps = np.array([ np.sum(P * logUT) for P in self.ConjMxComp_list ]).real / (np.pi/2)
+	##	Matrix components: logU = (pi/2) sum_i MxComps[i] MxComp_list[i]
+		#print("MxComps", MxComps)
+		#print("MxComp_weights2", self.MxComp_weights2)
+		return np.sum(MxComps**2 * self.MxComp_weights2)
+
+
+	def compute_weight2_to_target(self, U2t):
+		"""Provides the weight of U_to_target.  This function measures how far U_to_target is to a phase gate on either qubit."""
+		dist2 = 0		# how 'far' U2t is from an acceptible phase gate
+		D = np.diag(U2t)		# diagonal part of U2t
+		##	we penalize off-diagonal terms and how far the diagonal are pure phases
+		## since frobnorm(U) = d, we only need the diagonal elements to compute the distance
+		dist2 += 2 * np.sum(1 - np.abs(D)**2)		# measures how far the diagonal terms are to pure phases
+		##	equvalent to: dist2 += Frob_norm(np.triu(U2t, k=1) + np.tril(U2t, k=-1)) + np.sum(1 - np.abs(D)**2)
+		#print("OD weight =", dist2); return dist2
+		for chk in self.U2t_DiagTests:
+			dist2 += np.abs( D[chk[0]] * D[chk[3]] - D[chk[1]] * D[chk[2]] )**2
+		return self.coef['penalty'] * dist2
+
+
+	def compute_grad_weight2_at_step(self, s):
+		"""
+Specifically:
+	grHL_{i,j} = d compute_weight2_at_step( exp[i H] . U2t ) / d H_{i,j}
+	grHR_{i,j} = d compute_weight2_at_step( U2t . exp[-i H] ) / d H_{i,j}
+"""
+		assert 0 <= s and s < self.N
+		d = self.d
+		ConjMx = self.ConjMxComp_list
+		v, Z = self.U_decomp(s)
+		logU = Z @ np.diag(v) @ Z.conj().T		# is this needed?
+		## Conjugate each matrix in ConjMx, M -> Z^dag M Z
+		ZConjMx = np.tensordot(np.tensordot(Z.conj(), ConjMx, axes=[[0],[1]]), Z, axes=[2,0]).transpose(1,0,2)
+		grHL = np.zeros((d,d), dtype=complex)
+		grHR = np.zeros((d,d), dtype=complex)
+	##	d[weight] = (8/pi^2) sum_i MxComp_weights2_i Tr[ ConjM[i] logU ] Tr[ ConjM[i] dlogU ]
+		for i in range(len(ConjMx)):
+			MxComps = (2/np.pi) * np.array([ np.sum(M * logU.conj()) for M in ConjMx ]).real
+			ZMxComps = (2/np.pi) * np.array([ np.sum(np.diag(M).real * v) for M in ZConjMx ])
+			pass
+		print("weight2 = ", np.sum(MxComps**2 * self.MxComp_weights2))
+		print(MxComps)
+		print(ZMxComps)
+		#TODO raise NotImplementedError
+		return grHL, grHR
+
+
+	def compute_grad_weight2_to_target(self, U2t):
+		"""Compute the gradient of compute_weight2_to_target() with respect to H (applied to Vs[N])
+Specifically:  d compute_weight2_to_target(U2t . exp[-i H]) / d H_{i,j}
+"""
+		d = self.d
+		D = np.diag(U2t)
+		##	d[weight2] = sum_i grD_i d[D]_{i,i} + c.c.
+		grD = np.zeros(d, dtype=np.complex)
+		for chk in self.U2t_DiagTests:
+			c0,c1,c2,c3 = chk		# add to grD terms from U2t_DiagTests
+			chk_valc = np.conj( D[c0] * D[c3] - D[c1] * D[c2] )
+			grD[c0] += D[c3] * chk_valc
+			grD[c1] -= D[c2] * chk_valc
+			grD[c2] -= D[c1] * chk_valc
+			grD[c3] += D[c0] * chk_valc
+		grD += -2 * D.conj()		# the portion from grad sum(1 - |D|^2)
+		## convert from grD to grH:  d[weight2] = sum_{i,j} grH_{i,j} d[H]_{i,j}
+		grH = -1j * U2t.T * grD
+		grH = grH + grH.conj().T
+		#print(grH, "= grad w2t")
+		return grH * self.coef['penalty']
+
+
+
+################################################################################
 class qubit_unitary(UnitaryChain):
 	"""Specialize to 1 single qubit.
 
@@ -347,6 +485,7 @@ coefficients:
 	Rabi: the weight given to an X/Y (off diagonal) drives
 	k: the weight given to I,X (diagonal) drives
 """
+#TODO, make this a derived class of UnitaryChain_MxCompWeight
 
 	##	class variables
 	I2 = np.eye(2, dtype=float)
@@ -358,28 +497,27 @@ coefficients:
 	def __init__(self, Utarget):
 		super().__init__(Utarget)
 		assert self.d == 2
-		self.coef = {'Rabi':1., 'k':15.}
+		self.coef = {'Rabi':1., 'penalty':np.sqrt(15)}
 		self.check_consistency()
 
 
 	def compute_weight2_at_step(self, s):
 		logU = self.logU(s)
-		weight = ( np.abs(logU[0,0]**2) + np.abs(logU[1,1]**2) ) * self.coef['k']
-		weight += np.abs(logU[0,1]**2) * self.coef['Rabi']
+		weight = ( np.abs(logU[0,0]**2) + np.abs(logU[1,1]**2) ) * self.coef['penalty']**2
+		weight += np.abs(logU[0,1]**2) * self.coef['Rabi']**2
 		return weight
 
 
-	def weight_to_target(self, V=None):
+	def compute_weight2_to_target(self, U2t):
 		"""Provides the weight of U_to_target.  This function measures how far U_to_target is to a phase gate."""
-		Utt = self.U_to_target(V=V)
-		weight = Frob_norm(np.triu(Utt, k=1) + np.tril(Utt, k=-1))	# off diagonal term
-		weight += Frob_norm(np.abs(np.diag(Utt)) - 1)		# measures how far the diagonal terms are to pure phases
-		return self.coef['k'] * weight
+		weight = Frob_norm(np.triu(U2t, k=1) + np.tril(U2t, k=-1))	# off diagonal term
+		weight += Frob_norm(np.abs(np.diag(U2t)) - 1)		# measures how far the diagonal terms are to pure phases
+		return self.coef['penalty']**2 * weight
 
 
 
 ##################################################
-class two_qubits_unitary(UnitaryChain):
+class two_qubits_unitary(UnitaryChain_MxCompWeight):
 	"""Specialize to 2 qubits.
 
 coefficients:
@@ -398,13 +536,34 @@ coefficients:
 	def __init__(self, Utarget):
 		super().__init__(Utarget)
 		assert self.d == 4
-		two_qubits_unitary.set_up_Pauli_operators()
 		self.coef = {'Rabi1':0.1, 'Rabi2':1, 'penalty':10.}
+		self.set_coef()
 	##	Set up weights
-		self.MxComp_list = two_qubits_unitary.P2list		# divide by 4?
-		R1, R2, pe = self.coef['Rabi1'], self.coef['Rabi2'], self.coef['penalty']
-		self.MxComp_weights = np.array([ pe, R1, R1, pe, R1, 2*R2, 2*R2, pe, R1, 2*R2, 2*R2, pe, pe, pe, pe, pe ])
+		two_qubits_unitary.set_up_Pauli_operators()
+		self.U2t_DiagTests = [ (0,1,2,3), ]		# check how close the diagonal is to a Kronecker product
+	##	Done!
 		self.check_consistency()
+
+
+	def set_coef(self, Rabi1=None, Rabi2=None, penalty=None):
+		if Rabi1 is not None:
+			assert type(Rabi1) == float and 0 <= Rabi1
+			self.coef['Rabi1'] = float(Rabi1)
+		if Rabi2 is not None:
+			assert type(Rabi2) == float and 0 <= Rabi2
+			self.coef['Rabi2'] = float(Rabi2)
+		if penalty is not None:
+			assert type(penalty) == float and 0 <= penalty
+			self.coef['penalty'] = float(penalty)
+		R1 = self.coef['Rabi1']**2; R2 = self.coef['Rabi2']**2; pe = self.coef['penalty']**2
+		self.MxComp_weights2 = np.array([ pe, R1, R1, pe, R1, 2*R2, 2*R2, pe, R1, 2*R2, 2*R2, pe, pe, pe, pe, pe ])
+
+
+	def _deepcopy_to_c(self, c):
+		super()._deepcopy_to_c(c)
+		c.coef = self.coef.copy()
+		c.set_coef()
+
 
 	@classmethod
 	def set_up_Pauli_operators(cls):
@@ -413,21 +572,28 @@ coefficients:
 		two_qubits_unitary.P2list = np.array([ np.kron(P1,P2) for P1 in two_qubits_unitary.PauliList for P2 in two_qubits_unitary.PauliList ])
 		two_qubits_unitary.P2list.flags.writeable = False
 		assert two_qubits_unitary.P2list.shape == (16,4,4)
+		two_qubits_unitary.MxComp_list = two_qubits_unitary.P2list
+		two_qubits_unitary.ConjMxComp_list = two_qubits_unitary.P2list / 4
+		two_qubits_unitary.ConjMxComp_list.flags.writeable = False
 
-	def weight_to_target(self, V=None):
+
+	##	compute_weight2_at_step() and compute_weight2_to_target() derived from UnitaryChain_MxCompWeight
+
+	def _old_compute_weight2_to_target(self, U2t):
 		"""Provides the weight of U_to_target.  This function measures how far U_to_target is to a phase gate on either qubit."""
-		Utt = self.U_to_target(V=V)
-		weight = Frob_norm(np.triu(Utt, k=1) + np.tril(Utt, k=-1))	# off diagonal term
-		weight += Frob_norm(np.abs(np.diag(Utt)) - 1)		# measures how far the diagonal terms are to pure phases
-		weight += np.abs( Utt[0,0] * Utt[1,1] - Utt[0,1] * Utt[1,0] )**2		# check how close the diagonal is to a Kronecker product
+		weight = Frob_norm(np.triu(U2t, k=1) + np.tril(U2t, k=-1))	# off diagonal term
+		Dg = np.diag(U2t)		# diagonal part of U2t
+		weight += Frob_norm(np.abs(Dg) - 1)		# measures how far the diagonal terms are to pure phases
+		weight += np.abs( Dg[0] * Dg[3] - Dg[1] * Dg[2] )**2		# check how close the diagonal is to a Kronecker product
 		return self.coef['penalty'] * weight
 
-	def compute_weight2_at_step(self, s):
+	def _old_compute_weight2_at_step(self, s):
+	## superseded by UnitaryChain_MxCompWeight.compute_weight2_at_step()
 		logU = self.logU(s)		# returns a Hermitian matrix
 		logUT = logU.transpose()
 		##	Pauli components: Pcomp[i] = tr(P2[i] . logU) / 2pi, or logU = (pi/2) sum_i Pcomp[i] P2[i]
 		MxComps = np.array([ np.sum(P * logUT) for P in two_qubits_unitary.P2list ]).real / (2 * np.pi)
-		return np.sum(MxComps**2 * self.MxComp_weights)
+		return np.sum(MxComps**2 * self.MxComp_weights2)
 
 
 
