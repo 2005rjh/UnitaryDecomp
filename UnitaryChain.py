@@ -358,12 +358,7 @@ coefficients:
 	def __init__(self, Utarget):
 		super().__init__(Utarget)
 		assert self.d == 2
-<<<<<<< HEAD
-		self.coef = {'Rabi':1., 'k':5.}
-		self.weight_func = [ self.weight_of_U ] * self.N
-=======
 		self.coef = {'Rabi':1., 'k':15.}
->>>>>>> 7fd03933e5693780905b0cb877d7f8716ce1ab5a
 		self.check_consistency()
 
 
@@ -432,7 +427,7 @@ coefficients:
 		logUT = logU.transpose()
 		##	Pauli components: Pcomp[i] = tr(P2[i] . logU) / 2pi, or logU = (pi/2) sum_i Pcomp[i] P2[i]
 		MxComps = np.array([ np.sum(P * logUT) for P in two_qubits_unitary.P2list ]).real / (2 * np.pi)
-		return np.sum(MxComps**2 * self.MxComp_weights)
+		return np.sum(MxComps**2 * self.MxComp_weights)        
 
 
 
