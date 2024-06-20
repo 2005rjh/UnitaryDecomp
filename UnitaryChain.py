@@ -1,5 +1,6 @@
 import numpy as np
 import scipy as sp
+import scipy.special
 if np.version.version < '1.17.0': import scipy.linalg
 
 ## Note: we always use tabs for indentation
@@ -307,6 +308,18 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 		self.check_consistency()
 
 
+	def del_Vs(self, s):
+		"""Delete Vs[s] from the list, where 0 < s <= N.
+If s < N, then this combines steps (s-1) with s into one step.  If s == N, then this removes the final step and makes Vs[N-1] the new Ufinal."""
+		N = self.N
+		if N == 1: raise RuntimeError("Can't have less than one step.")
+		assert 0 < s and s <= N
+		del self.Vs[s]
+		self.N = N - 1
+		self.reset_cache()
+		self.check_consistency()
+
+
 	def backup_Vs(self):
 		self.backupVs = [ self.Vs[i].copy() for i in range(self.N+1) ]
 		print("backup_Vs deprecated")
@@ -402,11 +415,11 @@ Formula:
 
 
 	def compute_weight2_at_step(self, s):
-		logU = self.logU(s)		# expects a Hermitian matrix
+		jlogU = self.logU(s)		# expects a Hermitian matrix
 		d = self.d
-		logUT = logU.conj()
-		MxComps = np.array([ np.sum(P * logUT) for P in self.ConjMxComp_list ]).real / (np.pi/2)
-	##	Matrix components: logU = (pi/2) sum_i MxComps[i] MxComp_list[i]
+		jlogUT = jlogU.conj()
+		MxComps = np.array([ np.sum(P * jlogUT) for P in self.ConjMxComp_list ]).real / (np.pi/2)
+	##	Matrix components: jlogU = (pi/2) sum_i MxComps[i] MxComp_list[i]
 		#print("MxComps", MxComps)
 		#print("MxComp_weights2", self.MxComp_weights2)
 		return np.sum(MxComps**2 * self.MxComp_weights2)
@@ -423,44 +436,56 @@ Formula:
 		#print("OD weight =", dist2); return dist2
 		for chk in self.U2t_DiagTests:
 			dist2 += np.abs( D[chk[0]] * D[chk[3]] - D[chk[1]] * D[chk[2]] )**2
-		return self.coef['penalty'] * dist2
+		return self.coef['penalty']**2 * dist2
 
 
 	def compute_grad_weight2_at_step(self, s):
-		"""
+		"""Compute the gradient of compute_weight2_at_step() with respect to H* (applied to Vs[s] or Vs[s+1])
 Specifically:
-	grHL_{i,j} = d compute_weight2_at_step( exp[i H] . U2t ) / d H_{i,j}
-	grHR_{i,j} = d compute_weight2_at_step( U2t . exp[-i H] ) / d H_{i,j}
+	grHL_{i,j} = d compute_weight2_at_step( exp[i HL] . U[s] ) / d HL_{i,j}*
+	grHR_{i,j} = d compute_weight2_at_step( U[s] . exp[-i HR] ) / d HR_{i,j}*
+or equivalently
+	Delta compute_weight2_at_step( exp[i HL] . U[s] ) ~ Tr[ grHL . Delta(HL) ] + ...
+	Delta compute_weight2_at_step( U[s] . exp[-i HR] ) ~ Tr[ grHR . Delta(HR) ] + ...
+
+Caution: gradient code may not work well if v is close to +-pi.
 """
 		assert 0 <= s and s < self.N
 		d = self.d
 		ConjMx = self.ConjMxComp_list
 		v, Z = self.U_decomp(s)
-		logU = Z @ np.diag(v) @ Z.conj().T		# is this needed?
+		jlogU = Z @ np.diag(v) @ Z.conj().T		# is this needed?
 		## Conjugate each matrix in ConjMx, M -> Z^dag M Z
+		##	ZConjMx.shape = (nMx, d, d)
 		ZConjMx = np.tensordot(np.tensordot(Z.conj(), ConjMx, axes=[[0],[1]]), Z, axes=[2,0]).transpose(1,0,2)
+		commMx = np.repeat(v, d).reshape(d, d) - v		# commutation matrix, such that [i diag(v), M] = i commMx * M (Hadamard product)
+		phiM = np.exp(-0.5j * commMx) / sp.special.sinc(0.5 * commMx / np.pi)
+		phiP = phiM + 1j * commMx		# also same as phiM.T
 		grHL = np.zeros((d,d), dtype=complex)
 		grHR = np.zeros((d,d), dtype=complex)
-	##	d[weight] = (8/pi^2) sum_i MxComp_weights2_i Tr[ ConjM[i] logU ] Tr[ ConjM[i] dlogU ]
+		##	d[weight] = (8/pi^2) sum_i MxComp_weights2_i Tr[ ConjM[i] jlogU ] Tr[ ConjM[i] d[jlogU] ]
+		## Recall jlogU = log[U] / i
+		##	Tr[ X d[jlogU] ] = Tr[ phiP[X] dHL ] - Tr[ phiM[X] dHR ]
+		MxComps = (2/np.pi) * np.array([ np.sum(np.diag(M).real * v) for M in ZConjMx ])
 		for i in range(len(ConjMx)):
-			MxComps = (2/np.pi) * np.array([ np.sum(M * logU.conj()) for M in ConjMx ]).real
-			ZMxComps = (2/np.pi) * np.array([ np.sum(np.diag(M).real * v) for M in ZConjMx ])
-			pass
-		print("weight2 = ", np.sum(MxComps**2 * self.MxComp_weights2))
-		print(MxComps)
-		print(ZMxComps)
-		#TODO raise NotImplementedError
+			phiP_ConjMx = Z @ (phiP * ZConjMx[i]) @ Z.conj().T
+			phiM_ConjMx = Z @ (phiM * ZConjMx[i]) @ Z.conj().T
+			grHL += (4/np.pi) * self.MxComp_weights2[i] * MxComps[i] * phiP_ConjMx
+			grHR -= (4/np.pi) * self.MxComp_weights2[i] * MxComps[i] * phiM_ConjMx
+		#print(phiP, "= phiP")
+		#print(phiM, "= phiM")
+		#print("weight2 = ", np.sum(MxComps**2 * self.MxComp_weights2))
 		return grHL, grHR
 
 
 	def compute_grad_weight2_to_target(self, U2t):
-		"""Compute the gradient of compute_weight2_to_target() with respect to H (applied to Vs[N])
-Specifically:  d compute_weight2_to_target(U2t . exp[-i H]) / d H_{i,j}
+		"""Compute the gradient of compute_weight2_to_target() with respect to H* (applied to Vs[N])
+Specifically:  d compute_weight2_to_target(U2t . exp[-i H]) / d H_{i,j}*
 """
 		d = self.d
 		D = np.diag(U2t)
 		##	d[weight2] = sum_i grD_i d[D]_{i,i} + c.c.
-		grD = np.zeros(d, dtype=np.complex)
+		grD = np.zeros(d, dtype=complex)
 		for chk in self.U2t_DiagTests:
 			c0,c1,c2,c3 = chk		# add to grD terms from U2t_DiagTests
 			chk_valc = np.conj( D[c0] * D[c3] - D[c1] * D[c2] )
@@ -473,12 +498,12 @@ Specifically:  d compute_weight2_to_target(U2t . exp[-i H]) / d H_{i,j}
 		grH = -1j * U2t.T * grD
 		grH = grH + grH.conj().T
 		#print(grH, "= grad w2t")
-		return grH * self.coef['penalty']
+		return grH.conj() * self.coef['penalty']**2
 
 
 
 ################################################################################
-class qubit_unitary(UnitaryChain):
+class qubit_unitary(UnitaryChain_MxCompWeight):
 	"""Specialize to 1 single qubit.
 
 coefficients:
@@ -492,23 +517,55 @@ coefficients:
 	PX = np.array([[0,1.],[1.,0]])
 	PY = np.array([[0,-1j],[1j,0]])
 	PZ = np.array([[1.,0],[0,-1.]])
-	PauliList = [I2,PX,PY,PZ]
 
 	def __init__(self, Utarget):
 		super().__init__(Utarget)
 		assert self.d == 2
 		self.coef = {'Rabi':1., 'penalty':np.sqrt(15)}
+		self.set_coef()
+	##	Set up weights
+		qubit_unitary.set_up_MxComp_lists()
+		self.U2t_DiagTests = []		# no constraints on the phases of U_to_target
+	##	Done!
 		self.check_consistency()
 
 
-	def compute_weight2_at_step(self, s):
+	def set_coef(self, Rabi=None, penalty=None):
+		if Rabi is not None:
+			assert type(Rabi) == float and 0 <= Rabi
+			self.coef['Rabi'] = float(Rabi)
+		if penalty is not None:
+			assert type(penalty) == float and 0 <= penalty
+			self.coef['penalty'] = float(penalty)
+		R1 = self.coef['Rabi']**2; pe = self.coef['penalty']**2
+		self.MxComp_weights2 = np.array([ pe, R1, R1, pe ])
+
+
+	def _deepcopy_to_c(self, c):
+		super()._deepcopy_to_c(c)
+		c.coef = self.coef.copy()
+		c.set_coef()
+
+
+	@classmethod
+	def set_up_MxComp_lists(cls):
+		if hasattr(qubit_unitary, 'ConjMxComp_list'): return
+		qubit_unitary.PauliList = np.array([cls.I2, cls.PX, cls.PY, cls.PZ])
+		qubit_unitary.PauliList.flags.writeable = False
+		assert qubit_unitary.PauliList.shape == (4,2,2)
+		qubit_unitary.MxComp_list = qubit_unitary.PauliList
+		qubit_unitary.ConjMxComp_list = qubit_unitary.PauliList
+		qubit_unitary.ConjMxComp_list.flags.writeable = False
+
+
+	def _old_compute_weight2_at_step(self, s):
 		logU = self.logU(s)
 		weight = ( np.abs(logU[0,0]**2) + np.abs(logU[1,1]**2) ) * self.coef['penalty']**2
 		weight += np.abs(logU[0,1]**2) * self.coef['Rabi']**2
 		return weight
 
 
-	def compute_weight2_to_target(self, U2t):
+	def _old_compute_weight2_to_target(self, U2t):
 		"""Provides the weight of U_to_target.  This function measures how far U_to_target is to a phase gate."""
 		weight = Frob_norm(np.triu(U2t, k=1) + np.tril(U2t, k=-1))	# off diagonal term
 		weight += Frob_norm(np.abs(np.diag(U2t)) - 1)		# measures how far the diagonal terms are to pure phases
