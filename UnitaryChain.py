@@ -138,6 +138,7 @@ class UnitaryChain(object):
 
 
 	def check_consistency(self, tol=1e-13):
+#TODO, add cmptxt
 		d = self.d
 		N = self.N
 		dtype = self.dtype
@@ -154,8 +155,10 @@ class UnitaryChain(object):
 		assert type(cache['U_decomp']) == dict
 		assert type(cache['weights2']) == dict
 	##	check matrix values
-		def compareMx(M1, M2):
-			return np.max(np.abs( M1 - M2 ))
+		def compareMx(M1, M2, cmptxt=None):
+			maxdiff = np.max(np.abs( M1 - M2 ))
+			if maxdiff > tol: print('UnitaryChain.check_consistency(tol = {}) failed{}'.format( tol, " for '"+str(cmptxt)+"'" if cmptxt is not None else '' ))
+			return maxdiff
 		IdMx = np.eye(d)
 		output['Utarget unitarity'] = compareMx( Utarget.conj().T @ Utarget , IdMx )
 		for i in range(N+1):
@@ -394,13 +397,18 @@ Formula:
 		MxComp_weights2 = self.MxComp_weights2
 		U2t_DiagTests = self.U2t_DiagTests
 		nMx = d**2
+		def compareMx(M1, M2, cmptxt=None):
+			maxdiff = np.max(np.abs( M1 - M2 ))
+			if maxdiff > tol: print('UnitaryChain_MxCompWeight.check_consistency(tol = {}) failed{}'.format( tol, " for '"+str(cmptxt)+"'" if cmptxt is not None else '' ))
+			return maxdiff
 	##	check MxComp_weights2
 		assert isinstance(MxComp_weights2, np.ndarray) and MxComp_weights2.shape == (nMx,)
 		assert MxComp_weights2.dtype == float
 	##	check MxComp_list and ConjMxComp_list
 		assert isinstance(MxComp_list, np.ndarray) and MxComp_list.shape == (nMx, d, d)
 		assert isinstance(ConjMxComp_list, np.ndarray) and MxComp_list.shape == (nMx, d, d)
-		#TODO, compute MxComp_compat
+		output['ConjMxCom Herm'] = compareMx( ConjMxComp_list.transpose(0,2,1).conj() , ConjMxComp_list, 'ConjMxCom Herm' )
+		output['MxComp compat'] = compareMx( np.dot( MxComp_list.reshape(nMx, d**2) , ConjMxComp_list.reshape(nMx, d**2).conj().T ) , np.eye(nMx), 'MxComp compat' )
 	##	check U2t_DiagTests
 		assert isinstance(U2t_DiagTests, list)
 		for chk in U2t_DiagTests:
@@ -408,7 +416,7 @@ Formula:
 			#TODO check everything is within [0,d)
 	##
 		#TODO, add MxComp_compat
-		output['err'] = max( output['Utarget unitarity'], np.max(output['Vs unitarity']), np.max(output['U_decomp err']), 0 )
+		output['err'] = max( output['ConjMxCom Herm'], output['MxComp compat'], 0, output['err'] )
 		if type(tol) == float and output['err'] > tol:
 			raise ArithmeticError("UnitaryChain_MxCompWeight.check_consistency:  {} > tol ({})".format( output['err'], tol ))
 		return output
@@ -554,7 +562,7 @@ coefficients:
 		qubit_unitary.PauliList.flags.writeable = False
 		assert qubit_unitary.PauliList.shape == (4,2,2)
 		qubit_unitary.MxComp_list = qubit_unitary.PauliList
-		qubit_unitary.ConjMxComp_list = qubit_unitary.PauliList
+		qubit_unitary.ConjMxComp_list = qubit_unitary.PauliList / 2
 		qubit_unitary.ConjMxComp_list.flags.writeable = False
 
 
