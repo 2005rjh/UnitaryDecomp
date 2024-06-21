@@ -117,10 +117,10 @@ class UnitaryChain(object):
 		self.dtype = complex		## work everything out with complex numbers
 		self.Vs = [ np.eye(self.d, dtype=self.dtype), self.Utarget.copy() ]
 		self.reset_cache()
-	##	specify UnitaryChain class because this __init__ is called by subclass' initializers, which at this point have not finished yet and so this object may not be subclass-consistent.    
+	##	specify UnitaryChain class because this __init__ is called by subclass' initializers, which at this point have not finished yet and so this object may not be subclass-consistent.
 		#UnitaryChain.check_consistency(self)		#optional
 
-	
+
 	def copy(self):
 		"""Return a deep copy of the current object.  Overloading not recommend (overload _deepcopy_to_c instead)."""
 		c = type(self)(self.Utarget)
@@ -363,7 +363,7 @@ exp[i v] are the eigenvalues of U, W are the eigenvectors, such that U = Z @ np.
 	def d_logU_after(self, s):
 		"""Determines the 1st order change of (-i)logU (at step s) from altering Vs[s+1]."""
 		raise NotImplementedError
-        
+
 	def load_U_to_V(self, U):
 		self.subdivide_at_step(0, len(U))
 		for i in range(1, len(U)+1):
@@ -721,5 +721,4 @@ coefficients:
 
 
 
-##################################################
 ################################################################################

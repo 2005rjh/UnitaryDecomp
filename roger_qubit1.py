@@ -77,11 +77,6 @@ if 1:		# gradient descent (with fixed step size)
 		if new_w + 1e-8 > old_w: break
 
 
-<<<<<<< HEAD
-print("done")
-print(UC.str())
-=======
 print("="*20, "done", "="*20)
 print("UC coef: ", UC.coef, "\n")
 print(UC.str())
->>>>>>> 4faf8f0f69dc1c6b38ad9a93141bdb970b37f01f
