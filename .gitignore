@@ -163,3 +163,4 @@ cython_debug/
 
 #### Other
 .*swp
+.DS_Store

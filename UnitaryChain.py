@@ -2,6 +2,7 @@ import numpy as np
 import scipy as sp
 import scipy.special
 if np.version.version < '1.17.0': import scipy.linalg
+import stringtools
 
 ## Note: we always use tabs for indentation
 
@@ -116,7 +117,7 @@ class UnitaryChain(object):
 		self.Vs = [ np.eye(self.d, dtype=self.dtype), self.Utarget.copy() ]
 		self.reset_cache()
 	##	specify UnitaryChain class because this __init__ is called by subclass' initializers, which at this point have not finished yet and so this object may not be subclass-consistent.
-		UnitaryChain.check_consistency(self)		#optional
+		#UnitaryChain.check_consistency(self)		#optional
 
 
 	def copy(self):
@@ -138,7 +139,6 @@ class UnitaryChain(object):
 
 
 	def check_consistency(self, tol=1e-13):
-#TODO, add cmptxt
 		d = self.d
 		N = self.N
 		dtype = self.dtype
@@ -146,6 +146,7 @@ class UnitaryChain(object):
 		Vs = self.Vs
 		cache = self.cache
 		output = { 'Utarget unitarity': None, 'Vs unitarity': np.zeros(N+1), 'U_decomp err': -np.ones(N), }
+	##	basic checks
 		assert type(d) == int and d > 0
 		assert type(N) == int and N > 0
 		assert isinstance(Vs, list)
@@ -160,24 +161,25 @@ class UnitaryChain(object):
 			if maxdiff > tol: print('UnitaryChain.check_consistency(tol = {}) failed{}'.format( tol, " for '"+str(cmptxt)+"'" if cmptxt is not None else '' ))
 			return maxdiff
 		IdMx = np.eye(d)
-		output['Utarget unitarity'] = compareMx( Utarget.conj().T @ Utarget , IdMx )
+		assert isinstance(Utarget, np.ndarray) and Utarget.shape == (d, d)
+		output['Utarget unitarity'] = compareMx( Utarget.conj().T @ Utarget , IdMx , "Utarget unitarity" )
 		for i in range(N+1):
 			V = Vs[i]
 			assert id(V) != id(Utarget)		## make sures that references aren't duplicated
 			assert isinstance(V, np.ndarray) and V.shape == (d,d)
 			if i == 0:
-				output['Vs unitarity'][0] = compareMx( V , IdMx )
+				output['Vs unitarity'][0] = compareMx( V , IdMx , "Vs[0] unitarity ")
 				continue
 			##	i > 0 from now on
-			output['Vs unitarity'][i] = compareMx( V.conj().T @ V , IdMx )		## determine how close each matrix is to unitary
+			output['Vs unitarity'][i] = compareMx( V.conj().T @ V , IdMx , "Vs["+str(i)+"] unitarity" )		## determine how close each matrix is to unitary
 			Ustep = V @ Vs[i-1].conj().T
 			try:		## test that Ustep = Z @ e^{i v) @ Z^dag
 				Uv, UZ = cache['U_decomp'][i-1]
 				assert isinstance(Uv, np.ndarray) and Uv.shape == (d,)
 				assert Uv.dtype == float
 				assert isinstance(UZ, np.ndarray) and UZ.shape == (d,d)
-				output['U_decomp err'][i-1] = compareMx( UZ.conj().T @ UZ , IdMx )
-				output['U_decomp err'][i-1] += compareMx( UZ @ np.diag(np.exp(1j * Uv)) @ UZ.conj().T , Ustep )
+				output['U_decomp err'][i-1] = compareMx( UZ.conj().T @ UZ , IdMx , "U_decomp["+str(i-1)+"] unitarity" )
+				output['U_decomp err'][i-1] += compareMx( UZ @ np.diag(np.exp(1j * Uv)) @ UZ.conj().T , Ustep , "U_decomp["+str(i-1)+"] err" )
 			except KeyError:
 				pass
 	##
@@ -185,6 +187,7 @@ class UnitaryChain(object):
 		if type(tol) == float and output['err'] > tol:
 			raise ArithmeticError("UnitaryChain.check_consistency:  {} > tol ({})".format( output['err'], tol ))
 		return output
+
 
 	##################################################
 	##	Retrieval
@@ -202,8 +205,6 @@ class UnitaryChain(object):
 		"""Returns the log of the unitary matrix U at step s, where 0 <= s < N."""
 		v, Z = self.U_decomp(s)
 		return Z @ np.diag(v) @ Z.conj().T
-	##	Old code:
-		#return log_unitary(self.U(s))
 
 
 	def U_to_target(self, V=None):
@@ -246,9 +247,9 @@ class UnitaryChain(object):
 	def str(self):
 		s = ""
 		for i in range(self.N):
-			s += "Step {}:  (weight2 = {})\n".format( i, self.weight2_at_step(i) ) + str(zero_real_if_close(self.logU(i))) + "\n"
-		s += "Final U:\n" + str(zero_real_if_close(self.Ufinal())) + "\n"
-		s += "U to target:  (weight2 = {})\n".format( self.weight2_to_target() ) + str(zero_real_if_close(self.U_to_target())) + "\n"
+			s += "Step {}:  (weight2 = {})\n".format( i, self.weight2_at_step(i) ) + stringtools.joinstr([ "  ", zero_real_if_close(self.logU(i)) ]) + "\n"
+		s += "Final U:\n" + stringtools.joinstr([ "  ", zero_real_if_close(self.Ufinal()) ]) + "\n"
+		s += "U to target:  (weight2 = {})\n".format( self.weight2_to_target() ) + stringtools.joinstr([ "  ", zero_real_if_close(self.U_to_target()) ]) + "\n"
 		s += "Total weight1: {}\n".format( self.weight1_total() )
 		s += "Total weight2: {}\n".format( self.weight_total() )
 		return s
@@ -306,8 +307,7 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 	##	Add extra matrices
 		self.Vs = Vs[:step+1] + Vs_insert + Vs[step+1:]
 		self.N += num_div - 1
-		#TODO, update cache
-		self.reset_cache()
+		self.reset_cache()		#TODO, update cache more nuanced way
 		self.check_consistency()
 
 
@@ -319,7 +319,7 @@ If s < N, then this combines steps (s-1) with s into one step.  If s == N, then 
 		assert 0 < s and s <= N
 		del self.Vs[s]
 		self.N = N - 1
-		self.reset_cache()
+		self.reset_cache()		#TODO, update cache more nuanced way
 		self.check_consistency()
 
 
@@ -362,6 +362,7 @@ exp[i v] are the eigenvalues of U, W are the eigenvectors, such that U = Z @ np.
 	def d_logU_after(self, s):
 		"""Determines the 1st order change of (-i)logU (at step s) from altering Vs[s+1]."""
 		raise NotImplementedError
+
 
 	##	End of UnitaryChain class
 	##################################################
@@ -413,9 +414,8 @@ Formula:
 		assert isinstance(U2t_DiagTests, list)
 		for chk in U2t_DiagTests:
 			assert isinstance(chk, tuple) and len(chk) == 4
-			#TODO check everything is within [0,d)
+			for ii in range(4): assert 0 <= chk[ii] and chk[ii] < d
 	##
-		#TODO, add MxComp_compat
 		output['err'] = max( output['ConjMxCom Herm'], output['MxComp compat'], 0, output['err'] )
 		if type(tol) == float and output['err'] > tol:
 			raise ArithmeticError("UnitaryChain_MxCompWeight.check_consistency:  {} > tol ({})".format( output['err'], tol ))
@@ -423,6 +423,7 @@ Formula:
 
 
 	def compute_weight2_at_step(self, s):
+#TODO document
 		jlogU = self.logU(s)		# expects a Hermitian matrix
 		d = self.d
 		jlogUT = jlogU.conj()
@@ -509,6 +510,25 @@ Specifically:  d compute_weight2_to_target(U2t . exp[-i H]) / d H_{i,j}*
 		return grH.conj() * self.coef['penalty']**2
 
 
+	def compute_grad_weight2(self):
+		"""Compute the gradient of total weight2 with respect to H[s]* (applied to Vs[s])
+Specifically:  d weight2_total( exp[i H[1]) . Vs[1] , ..., exp[i H[N]) . Vs[N] ) / d H[s]_{i,j}*
+
+Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix for 1 <= s <= N.
+"""
+		d = self.d
+		N = self.N
+		gradH = [ None ] * (N+1)
+		#
+		for s in range(N):
+			grHL, grHR = self.compute_grad_weight2_at_step(s)
+			if s > 0: gradH[s] += grHR
+			gradH[s + 1] = grHL
+		U2t = self.U_to_target()
+		gradH[N] += self.compute_grad_weight2_to_target(U2t)
+		return gradH
+
+
 
 ################################################################################
 class qubit_unitary(UnitaryChain_MxCompWeight):
@@ -581,7 +601,7 @@ coefficients:
 
 
 
-##################################################
+################################################################################
 class two_qubits_unitary(UnitaryChain_MxCompWeight):
 	"""Specialize to 2 qubits.
 
@@ -662,4 +682,4 @@ coefficients:
 
 
 
-##################################################
+################################################################################
