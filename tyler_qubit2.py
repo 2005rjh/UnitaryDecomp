@@ -21,14 +21,12 @@ np.set_printoptions(precision=4, linewidth=10000, suppress=True)
 #UC = two_qubits_unitary(np.kron(I2,PauliY)*1j)		# Rabi 2
 #UC = two_qubits_unitary(np.kron(PauliX,PauliX)*1j)		# conv + gain
 UC = two_qubits_unitary(CntrlZ)
-UC.subdivide_at_step(0, 3)
-print(UC.Vs)
-print(UC.str())
-UC.Vs = [np.identity(4), np.kron(Hadamard, Hadamard), np.array([[1/2**(1/2), 0, 0, 1j/2**(1/2)], [0, 1/2**(1/2), 1j/2**(2), 0], [0, 1j/2**(1/2), 1/2**(2), 0], [1j/2**(1/2), 0, 0, 1/2**(1/2)]], dtype=complex), np.kron(Hadamard, Hadamard), CntrlZ]
-print(UC.weight_of_U(UC.Vs[1]))
-print(UC.Vs)
-print(UC.str())
+print(UC.str(), UC.Vs)
+UC2 = [np.kron(Hadamard, Hadamard), np.array([[1/2**(1/2), 0, 0, 1j/2**(1/2)], [0, 1/2**(1/2), 1j/2**(2), 0], [0, 1j/2**(1/2), 1/2**(2), 0], [1j/2**(1/2), 0, 0, 1/2**(1/2)]], dtype=complex), np.kron(Hadamard, Hadamard)]
 
+UC2b = [np.array([[1/2, -1/2, -1/2, 1/2], [1/2, 1/2, -1/2, -1/2], [1/2, -1/2, 1/2, -1/2], [1/2, 1/2, 1/2, 1/2]], dtype=complex), np.array([[1/2**(1/2), 0, 0, 1j/2**(1/2)], [0, 1/2**(1/2), 1j/2**(1/2), 0], [0, 1j/2**(1/2), 1/2**(1/2), 0], [1j/2**(1/2), 0, 0, 1/2**(1/2)]], dtype=complex), np.array([[1/2, 1/2, 1/2, 1/2], [-1/2, 1/2, -1/2, 1/2], [-1/2, -1/2, 1/2, 1/2], [1/2, -1/2, -1/2, 1/2]], dtype=complex)]
+UC.load_U_to_V(UC2b)
+print(UC.str(), UC.Vs)
 ##	Initialize random number generator
 if np.version.version >= '1.17.0':
 	RNG = np.random.default_rng(55)
@@ -38,20 +36,22 @@ else:
 #	print( Gaussian_Hermitian(2, RNG=RNG) )
 
 ## Try to update Vs[i] (steps i-1 and i)
+
 """
-UC.backup_Vs()
-for i in [1]:
-	for itr in range(30):
-		old_w = UC.weight_total()
-		smallU = random_small_Unitary(UC.d, RNG=RNG, sigma=0.05)
-		UC.Vs[i] = smallU @ UC.Vs[i]		# make sures to mulitply from the left
-		new_w = UC.weight_total()
-		if new_w > old_w:
-#			print("{} -> {}  (reject)".format( old_w, new_w ))
-			UC.restore_from_backup_Vs()
-		else:
-#			print("{} -> {}  (accept)".format( old_w, new_w ))
-			UC.backup_Vs()
-print(UC.Vs)
-# print(UC.str())
+UCbk = UC.copy()
+for itr in range(300):
+    for i in range(1, 4):
+        old_w = UCbk.weight_total()
+        smallU = random_small_Unitary(4, RNG=RNG, sigma=0.05)
+        UC.check_consistency()
+        UC.apply_U_to_V_at_step(i, smallU)
+        UC.check_consistency()
+        new_w = UC.weight_total()
+        if new_w > old_w:
+        #		print("{} -> {}  (reject)".format( old_w, new_w ))
+            UC = UCbk.copy()
+        else:
+        #		print("{} -> {}  (accept)".format( old_w, new_w ))
+            UCbk = UC.copy()
+print(UC.str())
 """

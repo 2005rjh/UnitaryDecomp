@@ -6,20 +6,20 @@ def optimize(UC, sub, sigma):
     UC.subdivide_at_step(0, sub) # subdividing steps beyond 0 reduces weight by bug
     print(UC.Vs)
     print(UC.str())
-    UC.backup_Vs()
+    UCbk = UC.copy()
     for itr in range(3000):
     	# print("------STEP {}------".format(i))
     	for i in range(1, UC.N+1):
-    		old_w = UC.weight_total()
+    		old_w = UCbk.weight_total()
     		smallU = random_small_Unitary(2, RNG=RNG, sigma=sigma)
-    		UC.Vs[i] = smallU @ UC.Vs[i]		# make sures to mulitply from the left
+    		UC.apply_U_to_V_at_step(i, smallU)		# make sures to mulitply from the left
     		new_w = UC.weight_total()
     		if new_w > old_w:
     			# print("{} -> {}  (reject)".format( old_w, new_w ))
-    			UC.restore_from_backup_Vs()
+    			UC = UCbk.copy()
     		else:
     			# print("{} -> {}  (accept)".format( old_w, new_w ))
-    			UC.backup_Vs()
+    			UCbk = UC.copy()
     	#print("FINAL WEIGHT {}".format(UC.weight_at_step(i-1)))
     	#print("WEIGHT LIST: {}".format(UC.weight_list()))
     
@@ -86,6 +86,6 @@ for x in range(2, 6):
         minix = x
 print("\n\nThe best approximation is:\n", mini.str(), "\nat {} subdivisions".format(minix))
 """
-optimize(qubit_unitary(Hadamard), 2, 0.05)
+optimize(qubit_unitary(Hadamard), 1, 0.05)
 # UC.subdivide_at_step(0, 2)		## split step 0 into 3 pieces
 # UC.subdivide_at_step(1, 4)		## then, split step 1 into 2 pieces
