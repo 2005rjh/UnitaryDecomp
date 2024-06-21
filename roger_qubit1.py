@@ -28,7 +28,7 @@ UC = qubit_unitary(Hadamard)
 #UC = qubit_unitary(np.array([[0,1j],[1j,0]]))
 #UC = qubit_unitary(np.array([[1,1j],[1j,1]])/np.sqrt(2))
 UC.set_coef(penalty=5.)
-UC.subdivide_at_step(0, 2)
+UC.subdivide_at_step(0, 3)
 print(UC.str())
 
 if 0:		# old code, deprecated and won't really work anymore
