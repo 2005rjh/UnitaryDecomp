@@ -67,7 +67,7 @@ if 1:		# gradient descent (with fixed step size)
 	new_w = UC.weight_total()
 	print("start:   \t{}".format( new_w ))
 	for itr in range(5000):
-		gradH = UC.compute_grad_weight2()
+		gradH = UC.compute_grad_weight2(enforce_U2t_0weight=True)
 		old_w = new_w
 		for stp in range(1, UC.N+1):
 			UC.apply_expiH_to_V_at_step(stp, -gradH[stp] * grad_desc_step_size)
