@@ -103,7 +103,8 @@ def Mx_nexprel(X):
 class UnitaryChain(object):
 
 ##	Vs[i] stores U[i-1] U[i-2] ... U[1] U[0]
-##	Ufinal = Vs[N] = U[N-1] ... U[1] U[0]
+##	such that U[i] = V[i+1] V[i]^{-1}
+##	Vfinal = Vs[N] = U[N-1] ... U[1] U[0]
 
 	def __init__(self, Utarget):
 		self.N = 1		## number of steps
@@ -116,12 +117,12 @@ class UnitaryChain(object):
 		self.dtype = complex		## work everything out with complex numbers
 		self.Vs = [ np.eye(self.d, dtype=self.dtype), self.Utarget.copy() ]
 		self.reset_cache()
-	##	specify UnitaryChain class because this __init__ is called by subclass' initializers, which at this point have not finished yet and so this object may not be subclass-consistent.    
+	##	specify UnitaryChain class because this __init__ is called by subclass' initializers, which at this point have not finished yet and so this object may not be subclass-consistent.
 		#UnitaryChain.check_consistency(self)		#optional
 
-	
+
 	def copy(self):
-		"""Return a deep copy of the current object."""
+		"""Return a deep copy of the current object.  Overloading not recommend (overload _deepcopy_to_c instead)."""
 		c = type(self)(self.Utarget)
 		self._deepcopy_to_c(c)
 		c.check_consistency()		#optional
@@ -167,6 +168,7 @@ class UnitaryChain(object):
 			V = Vs[i]
 			assert id(V) != id(Utarget)		## make sures that references aren't duplicated
 			assert isinstance(V, np.ndarray) and V.shape == (d,d)
+			if np.isnan(V).any(): raise AssertionError
 			if i == 0:
 				output['Vs unitarity'][0] = compareMx( V , IdMx , "Vs[0] unitarity ")
 				continue
@@ -180,8 +182,7 @@ class UnitaryChain(object):
 				assert isinstance(UZ, np.ndarray) and UZ.shape == (d,d)
 				output['U_decomp err'][i-1] = compareMx( UZ.conj().T @ UZ , IdMx , "U_decomp["+str(i-1)+"] unitarity" )
 				output['U_decomp err'][i-1] += compareMx( UZ @ np.diag(np.exp(1j * Uv)) @ UZ.conj().T , Ustep , "U_decomp["+str(i-1)+"] err" )
-			except KeyError:
-				pass
+			except KeyError: pass
 	##
 		output['err'] = max( output['Utarget unitarity'], np.max(output['Vs unitarity']), np.max(output['U_decomp err']), 0 )
 		if type(tol) == float and output['err'] > tol:
@@ -192,7 +193,7 @@ class UnitaryChain(object):
 	##################################################
 	##	Retrieval
 
-	def Ufinal(self):
+	def Vfinal(self):
 		return self.Vs[self.N]
 
 
@@ -208,7 +209,7 @@ class UnitaryChain(object):
 
 
 	def U_to_target(self, V=None):
-		"""Return the unitary needed to reach Utarget from V.  If V is None, then use Ufinal."""
+		"""Return the unitary needed to reach Utarget from V.  If V is None, then use Vfinal."""
 		if V is None: V = self.Vs[self.N]
 		return self.Utarget @ V.conj().T
 
@@ -248,7 +249,7 @@ class UnitaryChain(object):
 		s = ""
 		for i in range(self.N):
 			s += "Step {}:  (weight2 = {})\n".format( i, self.weight2_at_step(i) ) + stringtools.joinstr([ "  ", zero_real_if_close(self.logU(i)) ]) + "\n"
-		s += "Final U:\n" + stringtools.joinstr([ "  ", zero_real_if_close(self.Ufinal()) ]) + "\n"
+		s += "Final U:\n" + stringtools.joinstr([ "  ", zero_real_if_close(self.Vfinal()) ]) + "\n"
 		s += "U to target:  (weight2 = {})\n".format( self.weight2_to_target() ) + stringtools.joinstr([ "  ", zero_real_if_close(self.U_to_target()) ]) + "\n"
 		s += "Total weight1: {}\n".format( self.weight1_total() )
 		s += "Total weight2: {}\n".format( self.weight_total() )
@@ -313,7 +314,7 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 
 	def del_Vs(self, s):
 		"""Delete Vs[s] from the list, where 0 < s <= N.
-If s < N, then this combines steps (s-1) with s into one step.  If s == N, then this removes the final step and makes Vs[N-1] the new Ufinal."""
+If s < N, then this combines steps (s-1) with s into one step.  If s == N, then this removes the final step and makes Vs[N-1] the new Vfinal."""
 		N = self.N
 		if N == 1: raise RuntimeError("Can't have less than one step.")
 		assert 0 < s and s <= N
@@ -362,7 +363,7 @@ exp[i v] are the eigenvalues of U, W are the eigenvectors, such that U = Z @ np.
 	def d_logU_after(self, s):
 		"""Determines the 1st order change of (-i)logU (at step s) from altering Vs[s+1]."""
 		raise NotImplementedError
-        
+
 	def load_U_to_V(self, U):
 		self.subdivide_at_step(0, len(U))
 		for i in range(1, len(U)+1):
@@ -387,6 +388,9 @@ Required attributes:
 	ConjMxComp_list:  a list of matrices conjugate to MxComp_list (under Frobenius norm)
 	MxComp_weights2:
 	U2t_DiagTests:
+Optional attributes:
+	U2t_nullweight_proj:
+
 Also the class will have to overload _deepcopy_to_c() to make sure these attributes are copied.
 
 Formula:
@@ -421,7 +425,14 @@ Formula:
 			assert isinstance(chk, tuple) and len(chk) == 4
 			for ii in range(4): assert 0 <= chk[ii] and chk[ii] < d
 	##
-		output['err'] = max( output['ConjMxCom Herm'], output['MxComp compat'], 0, output['err'] )
+		output['U2t_0w_proj'] = -1
+		if hasattr(self, 'U2t_nullweight_proj'):
+			U2t_proj = self.U2t_nullweight_proj
+			assert isinstance(U2t_proj, np.ndarray) and U2t_proj.shape == (d, d)
+			output['U2t_0w_proj'] = compareMx( U2t_proj @ U2t_proj , U2t_proj, 'U2t_nullweight_proj err' )
+			#TODO check compat with U2t_DiagTests
+	##
+		output['err'] = max( output['ConjMxCom Herm'], output['MxComp compat'], output['U2t_0w_proj'], 0, output['err'] )
 		if type(tol) == float and output['err'] > tol:
 			raise ArithmeticError("UnitaryChain_MxCompWeight.check_consistency:  {} > tol ({})".format( output['err'], tol ))
 		return output
@@ -446,11 +457,26 @@ Formula:
 		##	we penalize off-diagonal terms and how far the diagonal are pure phases
 		## since frobnorm(U) = d, we only need the diagonal elements to compute the distance
 		dist2 += 2 * np.sum(1 - np.abs(D)**2)		# measures how far the diagonal terms are to pure phases
+		if dist2 < 0: dist2 = 0
 		##	equvalent to: dist2 += Frob_norm(np.triu(U2t, k=1) + np.tril(U2t, k=-1)) + np.sum(1 - np.abs(D)**2)
 		#print("OD weight =", dist2); return dist2
 		for chk in self.U2t_DiagTests:
 			dist2 += np.abs( D[chk[0]] * D[chk[3]] - D[chk[1]] * D[chk[2]] )**2
 		return self.coef['penalty']**2 * dist2
+
+
+	def project_Vfinal(self):
+		"""Alter Vfinal such that weight_to_target vanishes."""
+		N = self.N
+		d = self.d
+		U2t = self.U_to_target()
+		D = np.diag(U2t)
+		if np.any(np.abs(D) < 0.1): print("UnitaryChain_MxCompWeight.project_Vfinal():  Unreliable projection!")
+		v = np.angle(D)
+		raise NotImplementedError		# NEED TO figure out how to do this...
+#		self.Vs[N] = np.diag(np.exp(-1j * v)) @ self.Utarget
+		self.invalidate_cache_at_step(N - 1)
+		# no step N?
 
 
 	def compute_grad_weight2_at_step(self, s):
@@ -511,11 +537,10 @@ Specifically:  d compute_weight2_to_target(U2t . exp[-i H]) / d H_{i,j}*
 		## convert from grD to grH:  d[weight2] = sum_{i,j} grH_{i,j} d[H]_{i,j}
 		grH = -1j * U2t.T * grD
 		grH = grH + grH.conj().T
-		#print(grH, "= grad w2t")
 		return grH.conj() * self.coef['penalty']**2
 
 
-	def compute_grad_weight2(self):
+	def compute_grad_weight2(self, enforce_U2t_0weight=False):
 		"""Compute the gradient of total weight2 with respect to H[s]* (applied to Vs[s])
 Specifically:  d weight2_total( exp[i H[1]) . Vs[1] , ..., exp[i H[N]) . Vs[N] ) / d H[s]_{i,j}*
 
@@ -523,14 +548,22 @@ Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix
 """
 		d = self.d
 		N = self.N
-		gradH = [ None ] * (N+1)
-		#
+		gradH = [ None ] * (N + 1)
 		for s in range(N):
 			grHL, grHR = self.compute_grad_weight2_at_step(s)
 			if s > 0: gradH[s] += grHR
 			gradH[s + 1] = grHL
-		U2t = self.U_to_target()
-		gradH[N] += self.compute_grad_weight2_to_target(U2t)
+		if enforce_U2t_0weight:
+		##	assume weight2_to_target is zero, and force gradH[n] to maintain the zero weight
+			HNdiag = np.diag(gradH[N])
+			try:
+				U2t_proj = self.U2t_nullweight_proj
+				HNdiag = np.dot(U2t_proj, HNdiag)
+			except AttributeError: pass
+			gradH[N] = np.diag(HNdiag)
+		else:
+			U2t = self.U_to_target()
+			gradH[N] += self.compute_grad_weight2_to_target(U2t)
 		return gradH
 
 
@@ -664,6 +697,8 @@ coefficients:
 		two_qubits_unitary.MxComp_list = two_qubits_unitary.P2list
 		two_qubits_unitary.ConjMxComp_list = two_qubits_unitary.P2list / 4
 		two_qubits_unitary.ConjMxComp_list.flags.writeable = False
+		two_qubits_unitary.U2t_nullweight_proj = np.array([[3,1,1,-1],[1,3,-1,1],[1,-1,3,1],[-1,1,1,3]], dtype=float) / 4
+		two_qubits_unitary.U2t_nullweight_proj.flags.writeable = False
 
 
 	##	compute_weight2_at_step() and compute_weight2_to_target() derived from UnitaryChain_MxCompWeight
@@ -686,5 +721,4 @@ coefficients:
 
 
 
-##################################################
 ################################################################################
