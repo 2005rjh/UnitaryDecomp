@@ -34,7 +34,7 @@ def Frob_norm(M):
 	return np.sum(np.abs(M)**2)
 
 
-def log_unitary(U):
+def jlog_unitary(U):
 	"""Returns (1/i) log(U), a Hermitian matrix.  Assumes U is a unitary matrix."""
 	n = len(U)
 	assert U.shape == (n,n)
@@ -44,7 +44,7 @@ def log_unitary(U):
 	log_U = Z @ np.diag(arg_v) @ np.conj(np.transpose(Z))
 	return log_U
 
-def log_unitary_old(U):
+def jlog_unitary_old(U):
 	"""Returns (1/i) log(U), a Hermitian matrix."""
 	n = len(U)
 	assert U.shape == (n,n)
@@ -105,6 +105,7 @@ class UnitaryChain(object):
 ##	Vs[i] stores U[i-1] U[i-2] ... U[1] U[0]
 ##	such that U[i] = V[i+1] V[i]^{-1}
 ##	Vfinal = Vs[N] = U[N-1] ... U[1] U[0]
+##	Utarget = U_to_target Vfinal, or equivalently U_to_target = Utarget Vfinal^{-1}
 
 	def __init__(self, Utarget):
 		self.N = 1		## number of steps
@@ -115,7 +116,7 @@ class UnitaryChain(object):
 		self.Utarget.flags.writeable = False
 
 		self.dtype = complex		## work everything out with complex numbers
-		self.Vs = [ np.eye(self.d, dtype=self.dtype), self.Utarget.copy() ]
+		self.Vs = [ np.eye(self.d, dtype=self.dtype), self.Utarget.astype(self.dtype, copy=True) ]
 		self.reset_cache()
 	##	specify UnitaryChain class because this __init__ is called by subclass' initializers, which at this point have not finished yet and so this object may not be subclass-consistent.
 		#UnitaryChain.check_consistency(self)		#optional
@@ -163,12 +164,15 @@ class UnitaryChain(object):
 			return maxdiff
 		IdMx = np.eye(d)
 		assert isinstance(Utarget, np.ndarray) and Utarget.shape == (d, d)
+		##	Utarget.dtype does not have to match self.dtype
 		output['Utarget unitarity'] = compareMx( Utarget.conj().T @ Utarget , IdMx , "Utarget unitarity" )
 		for i in range(N+1):
 			V = Vs[i]
 			assert id(V) != id(Utarget)		## make sures that references aren't duplicated
 			assert isinstance(V, np.ndarray) and V.shape == (d,d)
 			if np.isnan(V).any(): raise AssertionError
+			if V.dtype != dtype:
+				raise AssertionError("UnitaryChain.check_consistency():  mismatched dtype:  {} (Vs[{}]) != {}".format( V.dtype, i, dtype ))
 			if i == 0:
 				output['Vs unitarity'][0] = compareMx( V , IdMx , "Vs[0] unitarity ")
 				continue
@@ -202,8 +206,8 @@ class UnitaryChain(object):
 		return self.Vs[s+1] @ self.Vs[s].conj().T
 
 
-	def logU(self, s):
-		"""Returns the log of the unitary matrix U at step s, where 0 <= s < N."""
+	def jlogU(self, s):
+		"""Returns -i times the log of the unitary matrix U at step s, where 0 <= s < N."""
 		v, Z = self.U_decomp(s)
 		return Z @ np.diag(v) @ Z.conj().T
 
@@ -245,25 +249,77 @@ class UnitaryChain(object):
 
 
 	##	human-readable-ish output
-	def str(self):
+	def str(self, verbose=2):
 		s = ""
 		for i in range(self.N):
-			s += "Step {}:  (weight2 = {})\n".format( i, self.weight2_at_step(i) ) + stringtools.joinstr([ "  ", zero_real_if_close(self.logU(i)) ]) + "\n"
-		s += "Final U:\n" + stringtools.joinstr([ "  ", zero_real_if_close(self.Vfinal()) ]) + "\n"
-		s += "U to target:  (weight2 = {})\n".format( self.weight2_to_target() ) + stringtools.joinstr([ "  ", zero_real_if_close(self.U_to_target()) ]) + "\n"
-		s += "Total weight1: {}\n".format( self.weight1_total() )
-		s += "Total weight2: {}\n".format( self.weight_total() )
+			s += self.step_str(i, verbose=verbose) + "\n"
+		if verbose >= 1:
+			s += "Final U:\n" + stringtools.joinstr([ "  ", zero_real_if_close(self.Vfinal()) ]) + "\n"
+			if verbose >= 2: s += "U to target:\t(weight2 = {})\n".format( self.weight2_to_target() ) + stringtools.joinstr([ "  ", zero_real_if_close(self.U_to_target()) ]) + "\n"
+			s += "Total weight1 = {:12.8f}\n".format( self.weight1_total() )
+			s += "Total weight2 = {:12.8f}\n".format( self.weight_total() )
 		return s
+
+	def step_str(self, s, verbose=2):
+		"""Output a string detailing the s'th step.  (No linebreak at the end.)
+Can be overloaded."""
+		if verbose >= 1: outstr = "Step {:2d}:  (weight2 = {})".format( s, self.weight2_at_step(s) )
+		if verbose >= 2: outstr += "\n" + stringtools.joinstr([ "  ", zero_real_if_close(self.jlogU(s)) ])
+		return outstr
 
 
 	##################################################
 	##
 
+	def load_U_to_V(self, U):
+#TODO, use load_from_Ulist instead
+		print("UnitaryChain.load_U_to_V() is deprecated, use load_from_Vlist instead.")
+		self.subdivide_at_step(0, len(U))
+		for i in range(1, len(U)+1):
+			self.update_V_at_step(i, U[i-1] @ self.Vs[i-1])
+
+	def load_from_Vlist(self, Vlist):
+		"""Vlist is a list of d*d unitary matrices.  Their dimensions must match that of Utarget, Vlist[0] must be identity."""
+		#TODO, test this code
+		N = len(Vlist) - 1
+		assert N >= 1
+		d = self.d
+		dtype = self.dtype
+		for s in range(N):
+			assert isinstance(Vlist[s], np.ndarray) and Vlist[s].shape == (d,d)
+			dtype = np.promote_types(Vlist[s].dtype, dtype)
+	##	load data
+		self.N = N
+		self.dtype = dtype
+		self.Vs = [ Vlist[i].astype(dtype, copy=True) for i in range(N+1) ]
+		self.reset_cache()
+		self.check_consistency()
+
+	def load_from_Ulist(self, Ulist, unitarize_input=False):
+		"""Ulist is a list of d*d unitary matrices.  The dimensions must match that of Utarget."""
+		N = len(Ulist)
+		assert N >= 1
+		d = self.d
+		for s in range(N):
+			assert isinstance(Ulist[s], np.ndarray) and Ulist[s].shape == (d,d)
+		if unitarize_input: raise NotImplementedError #TODO fix
+	##	load data
+		self.N = N
+		self.Vs = [ np.eye(d) ] + [ None ] * N
+		for s in range(N):
+			self.Vs[s+1] = Ulist[s] @ self.Vs[s]
+		self.dtype = np.promote_types(self.Vs[N].dtype, self.dtype)
+		for s in range(N):
+			self.Vs[s] = self.Vs[s].astype(self.dtype, copy=False)
+		self.reset_cache()
+		self.check_consistency()
+
+
 	def update_V_at_step(self, s, newV):
 		"""Update Vs[s] to newV.
 s is an integer between 1 <= s <= N.  This will alter steps s-1 and s."""
 		assert isinstance(newV, np.ndarray) and newV.shape == (self.d, self.d)
-		self.Vs[s] = newV.astype(self.dtype)
+		self.Vs[s] = newV.astype(self.dtype, copy=True)
 		self.invalidate_cache_at_step(s - 1); self.invalidate_cache_at_step(s)
 
 	def apply_U_to_V_at_step(self, s, U):
@@ -355,23 +411,20 @@ exp[i v] are the eigenvalues of U, W are the eigenvectors, such that U = Z @ np.
 		return v, Z
 
 
-	def d_logU_before(self, s):
+	def d_jlogU_before(self, s):
 		"""Determines the 1st order change of (-i)logU (at step s) from altering Vs[s]."""
 		raise NotImplementedError
 
 
-	def d_logU_after(self, s):
+	def d_jlogU_after(self, s):
 		"""Determines the 1st order change of (-i)logU (at step s) from altering Vs[s+1]."""
 		raise NotImplementedError
-
-	def load_U_to_V(self, U):
-		self.subdivide_at_step(0, len(U))
-		for i in range(1, len(U)+1):
-			self.update_V_at_step(i, U[i-1] @ self.Vs[i-1])
 
 
 	##	End of UnitaryChain class
 	##################################################
+
+
 
 
 
@@ -394,7 +447,7 @@ Optional attributes:
 Also the class will have to overload _deepcopy_to_c() to make sure these attributes are copied.
 
 Formula:
-	MxComps_i = 2 / pi * Tr[ ConjMxComp_list[i] . logU ]
+	MxComps_i = 2 / pi * Tr[ ConjMxComp_list[i] . (-i)logU ]
 	weight2(Ustep) = sum_i MxComp_weights2_i MxComps_i^2
 	weight2(U2target) = ODpenalty + ...
 """
@@ -440,8 +493,7 @@ Formula:
 
 	def compute_weight2_at_step(self, s):
 #TODO document
-		jlogU = self.logU(s)		# expects a Hermitian matrix
-		d = self.d
+		jlogU = self.jlogU(s)		# expects a Hermitian matrix
 		jlogUT = jlogU.conj()
 		MxComps = np.array([ np.sum(P * jlogUT) for P in self.ConjMxComp_list ]).real / (np.pi/2)
 	##	Matrix components: jlogU = (pi/2) sum_i MxComps[i] MxComp_list[i]
@@ -465,17 +517,19 @@ Formula:
 		return self.coef['penalty']**2 * dist2
 
 
-	def project_Vfinal(self):
-		"""Alter Vfinal such that weight_to_target vanishes."""
+	def _Vfinal_remove_OD(self):
+		"""Alter Vfinal such that it is diagonal (and unitary).
+This does not necessarily make weight_to_target vanish, since it doesn't enforce the U2t_DiagTests."""
 		N = self.N
 		d = self.d
 		U2t = self.U_to_target()
 		D = np.diag(U2t)
 		if np.any(np.abs(D) < 0.1): print("UnitaryChain_MxCompWeight.project_Vfinal():  Unreliable projection!")
-		v = np.angle(D)
-		raise NotImplementedError		# NEED TO figure out how to do this...
+		#v = np.angle(D)
 #		self.Vs[N] = np.diag(np.exp(-1j * v)) @ self.Utarget
+		self.Vs[N] = np.diag(D / np.abs(D)) @ self.Utarget
 		self.invalidate_cache_at_step(N - 1)
+		self.invalidate_cache_at_step(N)		#TODO this doesn't do anything yet
 		# no step N?
 
 
@@ -625,7 +679,7 @@ coefficients:
 
 
 	def _old_compute_weight2_at_step(self, s):
-		logU = self.logU(s)
+		logU = self.jlogU(s)
 		weight = ( np.abs(logU[0,0]**2) + np.abs(logU[1,1]**2) ) * self.coef['penalty']**2
 		weight += np.abs(logU[0,1]**2) * self.coef['Rabi']**2
 		return weight
@@ -659,7 +713,7 @@ coefficients:
 	def __init__(self, Utarget):
 		super().__init__(Utarget)
 		assert self.d == 4
-		self.coef = {'Rabi1':0.1, 'Rabi2':1, 'penalty':10.}
+		self.coef = {'Rabi1':0.1, 'Rabi2':1, 'penalty':5.}
 		self.set_coef()
 	##	Set up weights
 		two_qubits_unitary.set_up_Pauli_operators()
@@ -701,8 +755,34 @@ coefficients:
 		two_qubits_unitary.U2t_nullweight_proj.flags.writeable = False
 
 
+	def step_str(self, s, verbose=3):
+		outstr = ""
+		if verbose >= 1: outstr += "Step {:2d}:  \t".format(s)
+		jlogU = self.jlogU(s)
+		jlogUT = jlogU.conj()
+		##	MxComp_weights2 = [ pe, R1, R1, pe, R1, 2*R2, 2*R2, pe, R1, 2*R2, 2*R2, pe, pe, pe, pe, pe ]
+		R1_comps = np.array([0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+		R2_comps = np.array([0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0])
+		pe_comps = np.ones(16) - R1_comps - R2_comps
+		comps = [ R1_comps, R2_comps, pe_comps ]
+		wsum_str = "weight2 = {} = ".format( self.weight2_at_step(s) )
+		mxsum_str = stringtools.joinstr([ "  ", zero_real_if_close(jlogU) ])
+		for c in range(3):
+			MxComps = (2/np.pi) * np.array([ comps[c][i] * np.sum(self.ConjMxComp_list[i] * jlogUT) for i in range(16) ]).real
+			M = np.tensordot(MxComps, self.MxComp_list, axes=[[0],[0]]) / 2
+			if c > 0: wsum_str += " + "
+			wsum_str += str(np.sum(MxComps**2 * self.MxComp_weights2))
+			if verbose >= 3: mxsum_str += "\n" + stringtools.joinstr([ "   + pi * " if c > 0 else "   = pi * ", zero_real_if_close(M) ])
+		if verbose >= 3: mxsum_str += "\n"
+		outstr += "(" + wsum_str + ")"
+		if verbose >= 2: outstr += "\n" + mxsum_str
+		return outstr
+
+
 	##	compute_weight2_at_step() and compute_weight2_to_target() derived from UnitaryChain_MxCompWeight
 
+
+	#TODO, old code
 	def _old_compute_weight2_to_target(self, U2t):
 		"""Provides the weight of U_to_target.  This function measures how far U_to_target is to a phase gate on either qubit."""
 		weight = Frob_norm(np.triu(U2t, k=1) + np.tril(U2t, k=-1))	# off diagonal term
@@ -713,7 +793,7 @@ coefficients:
 
 	def _old_compute_weight2_at_step(self, s):
 	## superseded by UnitaryChain_MxCompWeight.compute_weight2_at_step()
-		logU = self.logU(s)		# returns a Hermitian matrix
+		logU = self.jlogU(s)		# returns a Hermitian matrix
 		logUT = logU.transpose()
 		##	Pauli components: Pcomp[i] = tr(P2[i] . logU) / 2pi, or logU = (pi/2) sum_i Pcomp[i] P2[i]
 		MxComps = np.array([ np.sum(P * logUT) for P in two_qubits_unitary.P2list ]).real / (2 * np.pi)

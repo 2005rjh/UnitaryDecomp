@@ -25,9 +25,6 @@ np.set_printoptions(precision=4, linewidth=10000, suppress=True)
 #UC.subdivide_at_step(0, 3)
 #print(UC.str())
 
-if 0:
-	print(UC.U_decomp(0))
-	print(UC.U_decomp(-1))
 
 ##	Initialize random number generator
 if np.version.version >= '1.17.0':
@@ -38,52 +35,16 @@ else:
 #	print( Gaussian_Hermitian(2, RNG=RNG) )
 
 
-def check_grad_weight2_at_step(par):
-	rand_seed, tol_factor = par
-	##	Initialize random number generator
-	if np.version.version >= '1.17.0':
-		RNG = np.random.default_rng(rand_seed)
-	else:
-		RNG = np.random.RandomState(rand_seed)
-
-	UC0 = two_qubits_unitary(np.eye(4));
-	UC0.set_coef(penalty=5.)
-	UC0.subdivide_at_step(0, 3)
-	UC0.update_V_at_step(1, random_small_Unitary(4, RNG=RNG, sigma=0.5))
-	UC0.update_V_at_step(2, random_small_Unitary(4, RNG=RNG, sigma=0.5))
-	UC0.update_V_at_step(3, random_small_Unitary(4, RNG=RNG, sigma=0.5))
-	print(UC0.str())
-	print("U_decomp(0)", UC0.U_decomp(0))
-	UC0.check_consistency()
-
-	w0ref = UC0.weight2_at_step(0)
-	w1ref = UC0.weight2_at_step(1)
-	gradHL_s0, gradHR_s0 = UC0.compute_grad_weight2_at_step(0)
-	gradHL_s1, gradHR_s1 = UC0.compute_grad_weight2_at_step(1)
-	print(gradHL_s0, "= gradHL")
-	print(gradHR_s1, "= gradHR")
-	H = Gaussian_Hermitian(4, RNG=RNG)
-	#print(H, "= H")
-	HgradHL = np.sum( gradHL_s0 * H ).real
-	HgradHR = np.sum( gradHR_s1 * H ).real
-	print("HgradHL", HgradHL, "\tHgradHR", HgradHR)
-	for eps in [1e-2, 1e-4, 1e-6, 1e-8]:
-		UC = UC0.copy()
-		UC.apply_expiH_to_V_at_step(1, H * eps)
-		#UC.check_consistency()
-		#print(UC.U(0) @ UC0.U(0).conj().T)
-		w0 = UC.weight2_at_step(0)
-		w1 = UC.weight2_at_step(1)
-		dw0 = w0 - w0ref
-		dw1 = w1 - w1ref
-		print("eps = {} \t w0ref = {}, w0 = {}, dw0 = {} \t dw1 = {}".format( eps, w0ref, w0, dw0, dw1 ))
 
 
-if 0:		# test derivative
-#	check_grad_weight2_to_target((65, 20.))
-#	check_grad_weight2_to_target((40, 40.))
-#	check_grad_weight2_to_target((90, 6.))
-	check_grad_weight2_at_step((85, 20.))
+if 1:
+	##	set up CZ
+	print("== Load CtrlZ with 3-step construction.")
+	UC = two_qubits_unitary(CntrlZ);
+	UC.load_from_Ulist([ np.kron( [[1,-1],[1,1]], [[1,-1],[1,1]] )/2. ,
+		np.array([ [1,0,0,1j], [0,1,1j,0], [0,1j,1,0], [1j,0,0,1] ])/np.sqrt(2) ,
+		np.kron( [[1,1],[-1,1]], [[1,1],[-1,1]] ) / 2. , ])
+	print(UC.str(verbose = 3))
 
 
 if 0:
