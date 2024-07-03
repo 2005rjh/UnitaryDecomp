@@ -10,23 +10,23 @@ import stringtools
 ##################################################
 ## General array processing
 def zero_if_close(a, tol=1e-14):
-   """Take an np.ndarray and set small elements to zero."""
-   if np.iscomplexobj(a):
-      cr = np.array(np.abs(a.real) < tol, int)
-      ci = np.array(np.abs(a.imag) < tol, int)
-      ar = np.choose(cr, [a.real, np.zeros(a.shape)])
-      ai = np.choose(ci, [a.imag, np.zeros(a.shape)])
-      return ar + 1j * ai
-   else:
-      c = np.array(np.abs(a) < tol, int)
-      return np.choose(c, [a, np.zeros_like(a)])
+	"""Take an np.ndarray and set small elements to zero."""
+	if np.iscomplexobj(a):
+		cr = np.array(np.abs(a.real) < tol, int)
+		ci = np.array(np.abs(a.imag) < tol, int)
+		ar = np.choose(cr, [a.real, np.zeros(a.shape)])
+		ai = np.choose(ci, [a.imag, np.zeros(a.shape)])
+		return ar + 1j * ai
+	else:
+		c = np.array(np.abs(a) < tol, int)
+		return np.choose(c, [a, np.zeros_like(a)])
 
 
 def zero_real_if_close(a, tol=1e-14):
-   """Take an np.ndarray and set small elements to zero.  Make it real if all its imaginary components vanishes."""
-   zic_a = zero_if_close(a, tol=tol)
-   if np.count_nonzero(zic_a.imag) > 0: return zic_a
-   return zic_a.real
+	"""Take an np.ndarray and set small elements to zero.  Make it real if all its imaginary components vanishes."""
+	zic_a = zero_if_close(a, tol=tol)
+	if np.count_nonzero(zic_a.imag) > 0: return zic_a
+	return zic_a.real
 
 
 def Frob_norm(M):
