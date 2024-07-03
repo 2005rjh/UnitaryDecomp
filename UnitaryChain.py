@@ -64,6 +64,7 @@ def Gaussian_Hermitian(n, RNG=None, sigma=1.0):
 
 
 def random_small_Unitary(n, RNG=None, sigma=1.0):
+	"""Return a unitary matrix close to the identity."""
 	return sp.linalg.expm(1j * Gaussian_Hermitian(n, RNG=RNG, sigma=sigma))
 
 
@@ -157,6 +158,7 @@ class UnitaryChain(object):
 		assert type(cache) == dict
 		assert type(cache['U_decomp']) == dict
 		assert type(cache['weights2']) == dict
+		#TODO, check cache keys
 	##	check matrix values
 		def compareMx(M1, M2, cmptxt=None):
 			maxdiff = np.max(np.abs( M1 - M2 ))
@@ -251,9 +253,9 @@ class UnitaryChain(object):
 	##	human-readable-ish output
 	def str(self, verbose=2):
 		s = ""
-		for i in range(self.N):
-			s += self.step_str(i, verbose=verbose) + "\n"
 		if verbose >= 1:
+			for i in range(self.N):
+				s += self.step_str(i, verbose=verbose) + "\n"
 			s += "Final U:\n" + stringtools.joinstr([ "  ", zero_real_if_close(self.Vfinal()) ]) + "\n"
 			if verbose >= 2: s += "U to target:\t(weight2 = {})\n".format( self.weight2_to_target() ) + stringtools.joinstr([ "  ", zero_real_if_close(self.U_to_target()) ]) + "\n"
 			s += "Total weight1 = {:12.8f}\n".format( self.weight1_total() )
@@ -345,27 +347,64 @@ s is an integer between 1 <= s <= N.  This will alter steps s-1 and s."""
 		self.cache['U_decomp'].pop(s, None)
 
 
+	##################################################
+	##	Tools to add/remove steps
+
 	def subdivide_at_step(self, step, num_div):
 		"""Evenly subdivide the unitary at step (step) into num_div pieces.
 The resulting UnitaryChain has (num_div-1) extra steps."""
+		assert isinstance(step, (int, np.integer))
+		assert isinstance(num_div, (int, np.integer))
+		N = self.N
+		num_div = int(num_div)
 		assert num_div > 0
+		assert 0 <= step and step < N
+		if num_div == 1: return		# nothing to do
 		Vs = self.Vs
 		Vstart = Vs[step]
-		Ustep = Vs[step+1] @ Vstart.conj().T
-	##	Diagonalize matrix:  Ustep = w @ diag(v) @ inv(w)
-		v,w = np.linalg.eig(Ustep)		# TODO, use U_decomp()
-		arg_v = np.angle(v)
+	##	Diagonalize matrix:  Ustep = UZ . diag(exp(i v)) . UZdag
+		Uv, UZ = self.U_decomp(step)
+		UZdag_Vstart = UZ.conj().T @ Vstart
+	##	reset cache
+		old_cache_U_decomp = self.cache['U_decomp']
+		self.reset_cache()
+	##	compute subdivisions: step -> [step: step+num_div]
 		Vs_insert = []
-		invw_Vstart = np.linalg.inv(w) @ Vstart
 		for i in range(1, num_div):
 		##	The i^th term is  Ustep^(i/n) @ Vstart  =  w @ diag(v^(i/n)) @ inv(w) @ Vstart
-			D = np.diag(np.exp(1j * arg_v * i / num_div))
-			Vs_insert.append(w @ D @ invw_Vstart)
+			#D = np.diag(np.exp(1j * arg_v * i / num_div))
+			#Vs_insert.append(w @ D @ invw_Vstart)
+		##	The i^th term is  Ustep^(i/n) @ Vstart  =  UZ @ diag(1j * Uv^(i/n)) @ UZdag @ Vstart
+			D = np.diag(np.exp(1j * Uv * i / num_div))
+			Vs_insert.append(UZ @ D @ UZdag_Vstart)
 	##	Add extra matrices
 		self.Vs = Vs[:step+1] + Vs_insert + Vs[step+1:]
 		self.N += num_div - 1
-		self.reset_cache()		#TODO, update cache more nuanced way
+	##	Rebuild (partially) cache, only keep 'U_decomp' (throw away 'weights2')
+		for i in range(num_div):
+			self.cache['U_decomp'][step + i] = (Uv / num_div, UZ)
+		for s in range(N):		# N is the old N
+			if s in old_cache_U_decomp:
+				if s < step: self.cache['U_decomp'][s] = old_cache_U_decomp[s]
+				if s > step: self.cache['U_decomp'][s + num_div - 1] = old_cache_U_decomp[s]
 		self.check_consistency()
+
+
+	def subdivide_every_step(self, num_div):
+		"""Evenly subdivide every unitary step into num_div pieces.  If num_div is a len-N array, then subdivide step s into num_div[s] pieces."""
+		N = self.N
+		try:
+			iter(num_div)
+			num_divs = num_div
+		except TypeError:
+			assert isinstance(num_div, (int, np.integer))
+			assert num_div >= 1
+			num_divs = np.ones(N, dtype=int) * num_div
+		assert len(num_divs) == N
+		for s in range(N):
+			assert num_divs[s] >= 1
+		for s in range(N - 1, -1, -1):
+			self.subdivide_at_step(s, num_divs[s])
 
 
 	def del_Vs(self, s):
@@ -386,6 +425,7 @@ If s < N, then this combines steps (s-1) with s into one step.  If s == N, then 
 
 	def restore_from_backup_Vs(self):
 		self.Vs = [ self.backupVs[i].copy() for i in range(self.N+1) ]
+		self.reset_cache()
 		print("restore_from_backup_Vs deprecated")
 
 
@@ -413,11 +453,13 @@ exp[i v] are the eigenvalues of U, W are the eigenvectors, such that U = Z @ np.
 
 	def d_jlogU_before(self, s):
 		"""Determines the 1st order change of (-i)logU (at step s) from altering Vs[s]."""
+		#TODO
 		raise NotImplementedError
 
 
 	def d_jlogU_after(self, s):
 		"""Determines the 1st order change of (-i)logU (at step s) from altering Vs[s+1]."""
+		#TODO
 		raise NotImplementedError
 
 
@@ -464,14 +506,15 @@ Formula:
 			maxdiff = np.max(np.abs( M1 - M2 ))
 			if maxdiff > tol: print('UnitaryChain_MxCompWeight.check_consistency(tol = {}) failed{}'.format( tol, " for '"+str(cmptxt)+"'" if cmptxt is not None else '' ))
 			return maxdiff
-	##	check MxComp_weights2
-		assert isinstance(MxComp_weights2, np.ndarray) and MxComp_weights2.shape == (nMx,)
-		assert MxComp_weights2.dtype == float
 	##	check MxComp_list and ConjMxComp_list
 		assert isinstance(MxComp_list, np.ndarray) and MxComp_list.shape == (nMx, d, d)
 		assert isinstance(ConjMxComp_list, np.ndarray) and MxComp_list.shape == (nMx, d, d)
 		output['ConjMxCom Herm'] = compareMx( ConjMxComp_list.transpose(0,2,1).conj() , ConjMxComp_list, 'ConjMxCom Herm' )
 		output['MxComp compat'] = compareMx( np.dot( MxComp_list.reshape(nMx, d**2) , ConjMxComp_list.reshape(nMx, d**2).conj().T ) , np.eye(nMx), 'MxComp compat' )
+	##	check MxComp_weights2
+		assert isinstance(MxComp_weights2, np.ndarray) and MxComp_weights2.shape == (nMx,)
+		assert MxComp_weights2.dtype == float
+		assert np.all(MxComp_weights2 >= 0)
 	##	check U2t_DiagTests
 		assert isinstance(U2t_DiagTests, list)
 		for chk in U2t_DiagTests:
@@ -621,6 +664,17 @@ Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix
 		return gradH
 
 
+	def apply_random_small_phase_to_Vfinal(self, RNG=None, sigma=0):
+		"""Modify Vfinal (and hence the last U step and U_to_target) such that weight_to_final remains unchanged."""
+		N = self.N
+		small_ph = RNG.normal(scale=sigma, size=(self.d,))
+		small_ph = np.dot(self.U2t_nullweight_proj, small_ph)
+		self.Vs[N] = np.exp(1j * small_ph)[:, np.newaxis] * self.Vs[N]		# left multiply by diagonal matrix
+		self.invalidate_cache_at_step(N - 1); self.invalidate_cache_at_step(N)
+		self.check_consistency()		# optional
+
+
+
 
 ################################################################################
 class qubit_unitary(UnitaryChain_MxCompWeight):
@@ -647,7 +701,7 @@ coefficients:
 		qubit_unitary.set_up_MxComp_lists()
 		self.U2t_DiagTests = []		# no constraints on the phases of U_to_target
 	##	Done!
-		self.check_consistency()
+		#self.check_consistency()		# optional
 
 
 	def set_coef(self, Rabi=None, penalty=None):
@@ -659,6 +713,7 @@ coefficients:
 			self.coef['penalty'] = float(penalty)
 		R1 = self.coef['Rabi']**2; pe = self.coef['penalty']**2
 		self.MxComp_weights2 = np.array([ pe, R1, R1, pe ])
+		self.cache['weights2'] = {}		# reset cached weights
 
 
 	def _deepcopy_to_c(self, c):
@@ -701,6 +756,11 @@ coefficients:
 	Rabi1: the weight given to an single qubit X/Y drives (assigns Rabi1 to half Rabi period)
 	Rabi2: the weight given to pair drives (assigns2 Rabi2 to half Rabi period of conversion or gain)
 	penalty: the weight given to other drives
+
+From (-i)log(U),
+	Rabi1 applies to IX, IY, XI, YI components;
+	Rabi2 applies to X/Y between |00>,|11>, and also X/Y between |01>,|10>;
+	penalty applies to others (Paulis II, ?Z, Z?).
 """
 
 	##	class variables
@@ -709,6 +769,7 @@ coefficients:
 	PY = np.array([[0,-1j],[1j,0]])
 	PZ = np.array([[1.,0],[0,-1.]])
 	PauliList = [I2,PX,PY,PZ]
+
 
 	def __init__(self, Utarget):
 		super().__init__(Utarget)
@@ -719,7 +780,7 @@ coefficients:
 		two_qubits_unitary.set_up_Pauli_operators()
 		self.U2t_DiagTests = [ (0,1,2,3), ]		# check how close the diagonal is to a Kronecker product
 	##	Done!
-		self.check_consistency()
+		#self.check_consistency()		# optional
 
 	def set_coef(self, Rabi1=None, Rabi2=None, penalty=None):
 		if Rabi1 is not None:
@@ -733,12 +794,14 @@ coefficients:
 			self.coef['penalty'] = float(penalty)
 		R1 = self.coef['Rabi1']**2; R2 = self.coef['Rabi2']**2; pe = self.coef['penalty']**2
 		self.MxComp_weights2 = np.array([ pe, R1, R1, pe, R1, 2*R2, 2*R2, pe, R1, 2*R2, 2*R2, pe, pe, pe, pe, pe ])
+		self.cache['weights2'] = {}		# reset cached weights
 
 
 	def _deepcopy_to_c(self, c):
+		##	overloads (grand)parent class, this is a helper called by copy()
 		super()._deepcopy_to_c(c)
 		c.coef = self.coef.copy()
-		c.set_coef()
+		c.set_coef()		# call set_coef again after self.coef has been updated
 
 
 	@classmethod
@@ -755,9 +818,13 @@ coefficients:
 		two_qubits_unitary.U2t_nullweight_proj.flags.writeable = False
 
 
+	#TODO check_consistency to check for coef
+
+
 	def step_str(self, s, verbose=3):
 		outstr = ""
-		if verbose >= 1: outstr += "Step {:2d}:  \t".format(s)
+		if verbose < 1: return ""
+		outstr += "Step {:2d}:  \t".format(s)
 		jlogU = self.jlogU(s)
 		jlogUT = jlogU.conj()
 		##	MxComp_weights2 = [ pe, R1, R1, pe, R1, 2*R2, 2*R2, pe, R1, 2*R2, 2*R2, pe, pe, pe, pe, pe ]

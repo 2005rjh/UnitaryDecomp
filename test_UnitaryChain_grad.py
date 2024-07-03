@@ -97,6 +97,44 @@ def test_grad_weight2():
 	yield check_grad_weight2_at_step, (72, 2.)
 
 
+
+##	Maybe move this to another file
+def test_subdiv():
+	print("test_subdiv()")
+	Rabi1 = 0.23; Rabi2 = 1.3; penalty = 3.7
+
+	#print("== Load CtrlZ with 3-step construction.")
+	UC = two_qubits_unitary(CntrlZ);
+	UC.set_coef(Rabi1 = Rabi1, Rabi2 = Rabi2, penalty = penalty)
+	UC.load_from_Ulist([ np.kron( [[1,-1],[1,1]], [[1,-1],[1,1]] )/2. ,
+		np.array([ [1,0,0,1j], [0,1,1j,0], [0,1j,1,0], [1j,0,0,1] ])/np.sqrt(2) ,
+		np.kron( [[1,1],[-1,1]], [[1,1],[-1,1]] ) / 2. , ])
+	UC.check_consistency()
+	print(UC.str(verbose = 2))
+
+	def assert_close(a, b, tol=1e-13):
+		assert abs(a-b) <= tol
+	exp_weight2 = [ Rabi1**2 / 2, Rabi2**2 / 2, Rabi1**2 / 2 ]
+
+	assert_close( UC.weight2_at_step(0) , exp_weight2[0] )
+	assert_close( UC.weight2_at_step(1) , exp_weight2[1] )
+	assert_close( UC.weight2_at_step(2) , exp_weight2[2] )
+	assert_close( UC.weight2_to_target() , 0. )
+	UC.subdivide_every_step([2,3,1])
+	UC.check_consistency()
+	print(UC.str(verbose = 2))
+	assert UC.N == 6
+	assert_close( UC.weight2_at_step(0) , exp_weight2[0] / 4 )
+	assert_close( UC.weight2_at_step(1) , exp_weight2[0] / 4 )
+	assert_close( UC.weight2_at_step(2) , exp_weight2[1] / 9 )
+	assert_close( UC.weight2_at_step(3) , exp_weight2[1] / 9 )
+	assert_close( UC.weight2_at_step(4) , exp_weight2[1] / 9 )
+	assert_close( UC.weight2_at_step(5) , exp_weight2[2] )
+	assert_close( UC.weight2_to_target() , 0. )
+	print("\n")
+
+
+
 ################################################################################
 if __name__ == "__main__":
 	print("==================== Test matrix identities ====================")
@@ -104,4 +142,5 @@ if __name__ == "__main__":
 
 	if 1:		# test derivative
 		for t,c in test_grad_weight2(): t(c)
+	test_subdiv()
 
