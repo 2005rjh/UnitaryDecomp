@@ -197,6 +197,18 @@ class UnitaryChain(object):
 
 
 	##################################################
+	##	Cache handling
+
+	def reset_cache(self):
+		self.cache = { 'U_decomp':{}, 'weights2':{} }
+
+	def invalidate_cache_at_step(self, s):
+		#TODO documentatation
+		self.cache['weights2'].pop(s, None)
+		self.cache['U_decomp'].pop(s, None)
+
+
+	##################################################
 	##	Retrieval
 
 	def Vfinal(self):
@@ -317,6 +329,7 @@ Can be overloaded."""
 		self.check_consistency()
 
 
+#TODO, at_step --> at_point
 	def update_V_at_step(self, s, newV):
 		"""Update Vs[s] to newV.
 s is an integer between 1 <= s <= N.  This will alter steps s-1 and s."""
@@ -336,15 +349,6 @@ s is an integer between 1 <= s <= N.  This will alter steps s-1 and s."""
 		A = 0.5j * ( H + np.conj(np.transpose(H)) )
 		self.Vs[s] = sp.linalg.expm(A) @ self.Vs[s]
 		self.invalidate_cache_at_step(s - 1); self.invalidate_cache_at_step(s)
-
-
-	def reset_cache(self):
-		self.cache = { 'U_decomp':{}, 'weights2':{} }
-
-	def invalidate_cache_at_step(self, s):
-		#TODO documentatation
-		self.cache['weights2'].pop(s, None)
-		self.cache['U_decomp'].pop(s, None)
 
 
 	##################################################
@@ -371,9 +375,6 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 	##	compute subdivisions: step -> [step: step+num_div]
 		Vs_insert = []
 		for i in range(1, num_div):
-		##	The i^th term is  Ustep^(i/n) @ Vstart  =  w @ diag(v^(i/n)) @ inv(w) @ Vstart
-			#D = np.diag(np.exp(1j * arg_v * i / num_div))
-			#Vs_insert.append(w @ D @ invw_Vstart)
 		##	The i^th term is  Ustep^(i/n) @ Vstart  =  UZ @ diag(1j * Uv^(i/n)) @ UZdag @ Vstart
 			D = np.diag(np.exp(1j * Uv * i / num_div))
 			Vs_insert.append(UZ @ D @ UZdag_Vstart)
@@ -409,9 +410,10 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 
 	def del_Vs(self, s):
 		"""Delete Vs[s] from the list, where 0 < s <= N.
-If s < N, then this combines steps (s-1) with s into one step.  If s == N, then this removes the final step and makes Vs[N-1] the new Vfinal."""
+If s < N, then this combines steps (s-1), s into one step.  If s == N, then this removes the final step and makes Vs[N-1] the new Vfinal."""
 		N = self.N
 		if N == 1: raise RuntimeError("Can't have less than one step.")
+		assert isinstance(s, (int, np.integer))
 		assert 0 < s and s <= N
 		del self.Vs[s]
 		self.N = N - 1
@@ -643,6 +645,7 @@ Specifically:  d weight2_total( exp[i H[1]) . Vs[1] , ..., exp[i H[N]) . Vs[N] )
 
 Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix for 1 <= s <= N.
 """
+#TODO, explain enforce_U2t_0weight
 		d = self.d
 		N = self.N
 		gradH = [ None ] * (N + 1)
@@ -749,10 +752,11 @@ coefficients:
 
 
 ################################################################################
+# TODO, rename to two_qubits_UChain
 class two_qubits_unitary(UnitaryChain_MxCompWeight):
 	"""Specialize to 2 qubits.
 
-coefficients:
+Coefficients:
 	Rabi1: the weight given to an single qubit X/Y drives (assigns Rabi1 to half Rabi period)
 	Rabi2: the weight given to pair drives (assigns2 Rabi2 to half Rabi period of conversion or gain)
 	penalty: the weight given to other drives

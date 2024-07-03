@@ -8,21 +8,27 @@ CntrlZ = np.diag([1.,1.,1.,-1.])
 F4 = np.array([[1,1,1,1],[1,1j,-1,-1j],[1,-1,1,-1],[1,-1j,-1,1j]]) / 2.
 
 
+def init_RNG(rand_seed):
+	##	Initialize random number generator
+	if np.version.version >= '1.17.0':
+		return np.random.default_rng(rand_seed)
+	else:
+		return np.random.RandomState(rand_seed)
+
+
+
+
 def check_grad_weight2_to_target(par):
 	"""Check the function compute_grad_weight2_to_target()."""
 	rand_seed, tol_factor = par
 	print("check_grad_weight2_to_target(rand_seed = {}, tol_factor = {})".format( rand_seed, tol_factor ))
-	##	Initialize random number generator
-	if np.version.version >= '1.17.0':
-		RNG = np.random.default_rng(rand_seed)
-	else:
-		RNG = np.random.RandomState(rand_seed)
+	RNG = init_RNG(rand_seed)
 
 	UC0 = two_qubits_unitary(F4);
 	UC0.set_coef(penalty=1.)
 	UC0.subdivide_at_step(0, 2)
 	UC0.del_Vs(2)
-	print(UC0.str())
+	#print(UC0.str())
 	print(UC0.check_consistency())
 
 	W0 = UC0.weight2_to_target()
@@ -45,17 +51,13 @@ def check_grad_weight2_to_target(par):
 def check_grad_weight2_at_step(par):
 	rand_seed, tol_factor = par
 	print("check_grad_weight2_at_step(rand_seed = {}, tol_factor = {})".format( rand_seed, tol_factor ))
-	##	Initialize random number generator
-	if np.version.version >= '1.17.0':
-		RNG = np.random.default_rng(rand_seed)
-	else:
-		RNG = np.random.RandomState(rand_seed)
+	RNG = init_RNG(rand_seed)
 
 	UC0 = two_qubits_unitary(F4 @ CntrlX);
-	UC0.set_coef(penalty=5.)
+	UC0.set_coef(Rabi1 = 0.3, Rabi2 = 1., penalty=5.)
 	UC0.subdivide_at_step(0, 3)
 	UC0.del_Vs(1)
-	print(UC0.str())
+	#print(UC0.str())
 	UC0.check_consistency()
 
 	w0ref = UC0.weight2_at_step(0)
@@ -86,6 +88,43 @@ def check_grad_weight2_at_step(par):
 	print('\n')
 
 
+def check_grad_total_weight2(par):
+	"""Check the function compute_grad_weight2()."""
+	rand_seed, tol_factor = par
+	print("check_grad_total_weight2(rand_seed = {}, tol_factor = {})".format( rand_seed, tol_factor ))
+	RNG = init_RNG(rand_seed)
+	
+	Utarget = np.kron( [[4,1],[-1,4]] , [[2j,1],[1,2j]] ) / np.sqrt(17 * 5) @ F4 @ np.diag([1,1,1,np.exp(1j*np.pi/6)])
+	UC0 = two_qubits_unitary(Utarget)
+	UC0.subdivide_at_step(0, 4)
+	UC0.check_consistency()
+	UC0.del_Vs(2)
+	UC0.apply_U_to_V_at_step(1, CntrlZ)
+	UC0.apply_U_to_V_at_step(3, CntrlX)
+	UC0.check_consistency()
+	#print(UC0.str())
+	UC0.set_coef(Rabi1 = 0.3, Rabi2 = 1.2, penalty=2.1)
+	print(UC0.str(verbose=1))
+
+	W0 = UC0.weight_total()
+	gradW = UC0.compute_grad_weight2(enforce_U2t_0weight=False)
+	H = [None] + [ Gaussian_Hermitian(4, RNG=RNG) for i in range(1,4) ]
+	HgradW = np.sum([ np.sum(gradW[i].conj() * H[i]).real for i in range(1,4) ])
+	print("  H = None, {}, {}, {}".format( *[ str(H[i][0,:2]) + " ... " for i in range(1,4) ] ))
+	print("  H . gradW =", HgradW)
+	for eps in [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7]:
+		UC = UC0.copy()
+		for i in range(1, 4): UC.apply_expiH_to_V_at_step(i, H[i] * eps)
+		W = UC.weight_total()
+		dW = W - W0
+		second_order_comp = dW/eps - HgradW
+		print("  eps = {:1.1e}   \t dW/eps = {} \t {} ~= {:.3f} * {} * {}".format( eps, dW/eps, second_order_comp, second_order_comp/UC0.coef['penalty']**2/eps, UC0.coef['penalty']**2, eps ))
+		#print( second_order_comp , eps * UC0.coef['penalty']**2 )
+		assert np.abs(second_order_comp) < eps * UC0.coef['penalty']**2 * tol_factor
+	print('\n')
+
+
+
 def test_grad_weight2():
 	yield check_grad_weight2_to_target, (65, 40.)
 	yield check_grad_weight2_to_target, (40, 40.)
@@ -95,6 +134,12 @@ def test_grad_weight2():
 	yield check_grad_weight2_at_step, (52, 2.)
 	yield check_grad_weight2_at_step, (62, 2.)
 	yield check_grad_weight2_at_step, (72, 2.)
+	yield check_grad_total_weight2, (36, 30.)
+	yield check_grad_total_weight2, (46, 30.)
+	yield check_grad_total_weight2, (56, 30.)
+	yield check_grad_total_weight2, (66, 30.)
+	yield check_grad_total_weight2, (76, 30.)
+	yield check_grad_total_weight2, (2076, 30.)
 
 
 
@@ -142,5 +187,5 @@ if __name__ == "__main__":
 
 	if 1:		# test derivative
 		for t,c in test_grad_weight2(): t(c)
-	test_subdiv()
+		test_subdiv()
 
