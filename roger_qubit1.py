@@ -52,7 +52,7 @@ if 0:		# new working code
 		for i in range(1, UC.N+1):
 			old_w = UCbk.weight_total()
 			smallU = random_small_Unitary(2, RNG=RNG, sigma=0.05)
-			UC.apply_U_to_V_at_step(i, smallU)
+			UC.apply_U_to_V_at_point(i, smallU)
 			new_w = UC.weight_total()
 			if new_w > old_w:
 		#		print("{} -> {}  (reject)".format( old_w, new_w ))
@@ -70,7 +70,7 @@ if 1:		# gradient descent (with fixed step size)
 		gradH = UC.compute_grad_weight2(enforce_U2t_0weight=True)
 		old_w = new_w
 		for stp in range(1, UC.N+1):
-			UC.apply_expiH_to_V_at_step(stp, -gradH[stp] * grad_desc_step_size)
+			UC.apply_expiH_to_V_at_point(stp, -gradH[stp] * grad_desc_step_size)
 			new_w = UC.weight_total()
 		if np.mod(itr, 50) == 0: print("iter {}:  \t{}".format( itr, new_w ))
 		if new_w > old_w: print("Uh oh...")

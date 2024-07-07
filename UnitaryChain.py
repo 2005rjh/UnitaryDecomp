@@ -295,7 +295,7 @@ Can be overloaded."""
 		print("UnitaryChain.load_U_to_V() is deprecated, use load_from_Vlist instead.")
 		self.subdivide_at_step(0, len(U))
 		for i in range(1, len(U)+1):
-			self.update_V_at_step(i, U[i-1] @ self.Vs[i-1])
+			self.update_V_at_point(i, U[i-1] @ self.Vs[i-1])
 
 	def load_from_Vlist(self, Vlist):
 		"""Vlist is a list of d*d unitary matrices.  Their dimensions must match that of Utarget, Vlist[0] must be identity."""
@@ -334,26 +334,25 @@ Can be overloaded."""
 		self.check_consistency()
 
 
-#TODO, at_step --> at_point
-	def update_V_at_step(self, s, newV):
-		"""Update Vs[s] to newV.
-s is an integer between 1 <= s <= N.  This will alter steps s-1 and s."""
+	def update_V_at_point(self, p, newV):
+		"""Update Vs[p] to newV.
+p is an integer between 1 <= p <= N.  This will alter steps p-1 and p."""
 		assert isinstance(newV, np.ndarray) and newV.shape == (self.d, self.d)
-		self.Vs[s] = newV.astype(self.dtype, copy=True)
-		self.invalidate_cache_at_step(s - 1); self.invalidate_cache_at_step(s)
+		self.Vs[p] = newV.astype(self.dtype, copy=True)
+		self.invalidate_cache_at_step(p - 1); self.invalidate_cache_at_step(p)
 
-	def apply_U_to_V_at_step(self, s, U):
-		"""Update Vs[s] -> U Vs[s], where U is a d*d unitary matrix (assuming U is unitary).
-s is an integer between 1 <= s <= N.  This will alter steps s-1 and s."""
-		self.Vs[s] = U @ self.Vs[s]
-		self.invalidate_cache_at_step(s - 1); self.invalidate_cache_at_step(s)
+	def apply_U_to_V_at_point(self, p, U):
+		"""Update Vs[p] -> U Vs[p], where U is a d*d unitary matrix (assuming U is unitary).
+p is an integer between 1 <= p <= N.  This will alter steps p-1 and p."""
+		self.Vs[p] = U @ self.Vs[p]
+		self.invalidate_cache_at_step(p - 1); self.invalidate_cache_at_step(p)
 
-	def apply_expiH_to_V_at_step(self, s, H):
-		"""Update Vs[s] -> exp[iH] Vs[s], where H is a d*d Hermitian matrix.
-s is an integer between 1 <= s <= N.  This will alter steps s-1 and s."""
+	def apply_expiH_to_V_at_point(self, p, H):
+		"""Update Vs[p] -> exp[iH] Vs[p], where H is a d*d Hermitian matrix.
+p is an integer between 1 <= p <= N.  This will alter steps p-1 and p."""
 		A = 0.5j * ( H + np.conj(np.transpose(H)) )
-		self.Vs[s] = sp.linalg.expm(A) @ self.Vs[s]
-		self.invalidate_cache_at_step(s - 1); self.invalidate_cache_at_step(s)
+		self.Vs[p] = sp.linalg.expm(A) @ self.Vs[p]
+		self.invalidate_cache_at_step(p - 1); self.invalidate_cache_at_step(p)
 
 
 	##################################################

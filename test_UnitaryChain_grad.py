@@ -38,7 +38,7 @@ def check_grad_weight2_to_target(par):
 	print("H . gradW =", HgradW)
 	for eps in [1e-2, 1e-3, 1e-4, 1e-5, 1e-6]:
 		UC = UC0.copy()
-		UC.apply_expiH_to_V_at_step(1, H * eps)
+		UC.apply_expiH_to_V_at_point(1, H * eps)
 		W = UC.weight2_to_target()
 		dW = W - W0
 		second_order_comp = dW/eps - HgradW
@@ -74,7 +74,7 @@ def check_grad_weight2_at_step(par):
 	print("HgradHL = {} \t HgradHR = {}".format( HgradHL, HgradHR ))
 	for eps in [1e-2, 1e-4, 1e-6, 1e-7]:
 		UC = UC0.copy()
-		UC.apply_expiH_to_V_at_step(1, H * eps)
+		UC.apply_expiH_to_V_at_point(1, H * eps)
 		#UC.check_consistency()
 		#print(UC.U(0) @ UC0.U(0).conj().T)
 		w0 = UC.weight2_at_step(0)
@@ -99,8 +99,8 @@ def check_grad_total_weight2(par):
 	UC0.subdivide_at_step(0, 4)
 	UC0.check_consistency()
 	UC0.del_Vs(2)
-	UC0.apply_U_to_V_at_step(1, CntrlZ)
-	UC0.apply_U_to_V_at_step(3, CntrlX)
+	UC0.apply_U_to_V_at_point(1, CntrlZ)
+	UC0.apply_U_to_V_at_point(3, CntrlX)
 	UC0.check_consistency()
 	#print(UC0.str())
 	UC0.set_coef(Rabi1 = 0.3, Rabi2 = 1.2, penalty=2.1)
@@ -114,7 +114,7 @@ def check_grad_total_weight2(par):
 	print("  H . gradW =", HgradW)
 	for eps in [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7]:
 		UC = UC0.copy()
-		for i in range(1, 4): UC.apply_expiH_to_V_at_step(i, H[i] * eps)
+		for i in range(1, 4): UC.apply_expiH_to_V_at_point(i, H[i] * eps)
 		W = UC.weight_total()
 		dW = W - W0
 		second_order_comp = dW/eps - HgradW
