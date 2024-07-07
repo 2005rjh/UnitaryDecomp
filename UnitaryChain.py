@@ -158,6 +158,7 @@ class UnitaryChain(object):
 		assert type(cache) == dict
 		assert type(cache['U_decomp']) == dict
 		assert type(cache['weights2']) == dict
+		assert type(cache['fragile']) == dict
 		#TODO, check cache keys
 	##	check matrix values
 		def compareMx(M1, M2, cmptxt=None):
@@ -200,12 +201,13 @@ class UnitaryChain(object):
 	##	Cache handling
 
 	def reset_cache(self):
-		self.cache = { 'U_decomp':{}, 'weights2':{} }
+		self.cache = { 'U_decomp':{}, 'weights2':{}, 'fragile':{} }
 
 	def invalidate_cache_at_step(self, s):
 		#TODO documentatation
 		self.cache['weights2'].pop(s, None)
 		self.cache['U_decomp'].pop(s, None)
+		self.cache['fragile'] = {}
 
 
 	##################################################
@@ -223,6 +225,7 @@ class UnitaryChain(object):
 	def jlogU(self, s):
 		"""Returns -i times the log of the unitary matrix U at step s, where 0 <= s < N."""
 		v, Z = self.U_decomp(s)
+#TODO, reduce the number of matrix of multiplications
 		return Z @ np.diag(v) @ Z.conj().T
 
 
@@ -269,9 +272,11 @@ class UnitaryChain(object):
 			for i in range(self.N):
 				s += self.step_str(i, verbose=verbose) + "\n"
 			s += "Final U:\n" + stringtools.joinstr([ "  ", zero_real_if_close(self.Vfinal()) ]) + "\n"
-			if verbose >= 2: s += "U to target:\t(weight2 = {})\n".format( self.weight2_to_target() ) + stringtools.joinstr([ "  ", zero_real_if_close(self.U_to_target()) ]) + "\n"
+			s += "U to target:\t(weight2 = {})\n".format( self.weight2_to_target() )
+			if verbose >= 2: s += stringtools.joinstr([ "  ", zero_real_if_close(self.U_to_target()) ]) + "\n"
 			s += "Total weight1 = {:12.8f}\n".format( self.weight1_total() )
 			s += "Total weight2 = {:12.8f}\n".format( self.weight_total() )
+			s += "Total weight2 * {} = {:12.8f}\n".format( self.N, self.weight_total() * self.N )
 		return s
 
 	def step_str(self, s, verbose=2):
@@ -499,6 +504,7 @@ Formula:
 	def check_consistency(self, tol=1e-13):
 		output = super().check_consistency(tol=tol)
 		d = self.d
+		N = self.N
 		MxComp_list = self.MxComp_list
 		ConjMxComp_list = self.ConjMxComp_list
 		MxComp_weights2 = self.MxComp_weights2
@@ -646,6 +652,7 @@ Specifically:  d weight2_total( exp[i H[1]) . Vs[1] , ..., exp[i H[N]) . Vs[N] )
 Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix for 1 <= s <= N.
 """
 #TODO, explain enforce_U2t_0weight
+#TODO, cache result
 		d = self.d
 		N = self.N
 		gradH = [ None ] * (N + 1)
@@ -717,9 +724,11 @@ coefficients:
 		R1 = self.coef['Rabi']**2; pe = self.coef['penalty']**2
 		self.MxComp_weights2 = np.array([ pe, R1, R1, pe ])
 		self.cache['weights2'] = {}		# reset cached weights
+		self.cache['fragile'] = {}		# reset cached gradients
 
 
 	def _deepcopy_to_c(self, c):
+		##	overloads (grand)parent class, this is a helper called by copy()
 		super()._deepcopy_to_c(c)
 		c.coef = self.coef.copy()
 		c.set_coef()
@@ -786,6 +795,7 @@ From (-i)log(U),
 	##	Done!
 		#self.check_consistency()		# optional
 
+
 	def set_coef(self, Rabi1=None, Rabi2=None, penalty=None):
 		if Rabi1 is not None:
 			assert type(Rabi1) == float and 0 <= Rabi1
@@ -799,6 +809,7 @@ From (-i)log(U),
 		R1 = self.coef['Rabi1']**2; R2 = self.coef['Rabi2']**2; pe = self.coef['penalty']**2
 		self.MxComp_weights2 = np.array([ pe, R1, R1, pe, R1, 2*R2, 2*R2, pe, R1, 2*R2, 2*R2, pe, pe, pe, pe, pe ])
 		self.cache['weights2'] = {}		# reset cached weights
+		self.cache['fragile'] = {}		# reset cached gradients
 
 
 	def _deepcopy_to_c(self, c):
