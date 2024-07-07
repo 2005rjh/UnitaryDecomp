@@ -534,6 +534,16 @@ Formula:
 			assert isinstance(U2t_proj, np.ndarray) and U2t_proj.shape == (d, d)
 			output['U2t_0w_proj'] = compareMx( U2t_proj @ U2t_proj , U2t_proj, 'U2t_nullweight_proj err' )
 			#TODO check compat with U2t_DiagTests
+	##	check cache
+	#TODO, loop over keys
+		if 'grad_w2 U2t0' in self.cache['fragile']:
+			gradHv = self.cache['fragile']['grad_w2 U2t0']
+			assert isinstance(gradHv, np.ndarray) and gradHv.shape == (N * d **2,)
+			print('grad_w2 U2t0')
+		if 'grad_w2' in self.cache['fragile']:
+			gradHv = self.cache['fragile']['grad_w2']
+			assert isinstance(gradHv, np.ndarray) and gradHv.shape == (N * d **2,)
+			print('grad_w2')
 	##
 		output['err'] = max( output['ConjMxCom Herm'], output['MxComp compat'], output['U2t_0w_proj'], 0, output['err'] )
 		if type(tol) == float and output['err'] > tol:
@@ -644,7 +654,7 @@ Specifically:  d compute_weight2_to_target(U2t . exp[-i H]) / d H_{i,j}*
 		return grH.conj() * self.coef['penalty']**2
 
 
-	def compute_grad_weight2(self, enforce_U2t_0weight=False):
+	def compute_grad_weight2(self, enforce_U2t_0weight=False, output_form='MxList'):
 		"""Compute the gradient of total weight2 with respect to H[s]* (applied to Vs[s])
 Specifically:  d weight2_total( exp[i H[1]) . Vs[1] , ..., exp[i H[N]) . Vs[N] ) / d H[s]_{i,j}*
 
@@ -652,9 +662,22 @@ Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix
 """
 #TODO, explain enforce_U2t_0weight
 #TODO, cache result
+		assert output_form == 'MxList' or output_form == 'vec'
 		d = self.d
 		N = self.N
 		gradH = [ None ] * (N + 1)
+	##	Check cache
+		if enforce_U2t_0weight:
+			if 'grad_w2 U2t0' in self.cache['fragile']:
+				gradHv = self.cache['fragile']['grad_w2 U2t0']
+				if output_form == 'MxList': return [ None ] + [ gradHv.reshape(N,d,d)[i] for i in range(N) ]
+				if output_form == 'vec': return gradHv
+		else:
+			if 'grad_w2' in self.cache['fragile']:
+				gradHv = self.cache['fragile']['grad_w2']
+				if output_form == 'MxList': return [ None ] + [ gradHv.reshape(N,d,d)[i] for i in range(N) ]
+				if output_form == 'vec': return gradHv
+	##	Collate gradient data
 		for s in range(N):
 			grHL, grHR = self.compute_grad_weight2_at_step(s)
 			if s > 0: gradH[s] += grHR
@@ -670,14 +693,20 @@ Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix
 		else:
 			U2t = self.U_to_target()
 			gradH[N] += self.compute_grad_weight2_to_target(U2t)
-		return gradH
+	##	Vectorize
+		gradHv = np.array(gradH[1:]).reshape(-1)
+	## Cache and return
+		if enforce_U2t_0weight: self.cache['fragile']['grad_w2 U2t0'] = gradHv
+		else: self.cache['fragile']['grad_w2'] = gradHv
+		if output_form == 'vec': return gradHv
+		else: return gradH
 
 
 	def apply_random_small_phase_to_Vfinal(self, RNG=None, sigma=0):
 		"""Modify Vfinal (and hence the last U step and U_to_target) such that weight_to_final remains unchanged."""
 		N = self.N
 		small_ph = RNG.normal(scale=sigma, size=(self.d,))
-		small_ph = np.dot(self.U2t_nullweight_proj, small_ph)
+		if hasattr(self, 'U2t_nullweight_proj'): small_ph = np.dot(self.U2t_nullweight_proj, small_ph)
 		self.Vs[N] = np.exp(1j * small_ph)[:, np.newaxis] * self.Vs[N]		# left multiply by diagonal matrix
 		self.invalidate_cache_at_step(N - 1); self.invalidate_cache_at_step(N)
 		self.check_consistency()		# optional
@@ -832,7 +861,11 @@ From (-i)log(U),
 		two_qubits_unitary.U2t_nullweight_proj.flags.writeable = False
 
 
-	#TODO check_consistency to check for coef
+#	def check_consistency(self, tol=1e-13):
+#		output = super().check_consistency(tol=tol)
+#		assert self.d == 4
+#		return output
+#	#TODO check_consistency to check for coef
 
 
 	def step_str(self, s, verbose=3):
