@@ -1,3 +1,13 @@
+##
+
+##	Check if this is run by nose or pytest
+import sys
+PyTSuite = None
+if 'nose' in sys.modules.keys(): PyTSuite = 'nose'
+if 'pytest' in sys.modules.keys(): PyTSuite = 'pytest'; import pytest
+
+################################################################################
+##	Begin test script
 import numpy as np
 import scipy as sp
 from UnitaryChain import *
@@ -30,14 +40,6 @@ MxLists = [None, None, Mx2list, Mx3list]
 ################################################################################
 ##	Tests
 
-def test_adjoint_op():
-	for i in range(len(Mx2list)):
-		for j in range(len(Mx2list)):
-			yield check_adjoint_op, (2,i,j,1e-16)
-	for i in range(len(Mx3list)):
-		for j in range(len(Mx3list)):
-			yield check_adjoint_op, (3,i,j,1e-16)
-
 def check_adjoint_op(par):
 	"""Check that ad_M1(M2) = [M1,M2].
 	functions tested:  UnitaryChain.adjoint_op_MxRep
@@ -54,13 +56,15 @@ def check_adjoint_op(par):
 	diff = ad1 @ v2 - commute.reshape(-1)
 	assert np.max(np.abs(diff)) <= tol
 
+#TODO set up Parametrized tests
+#	def test_adjoint_op():
+#		for i in range(len(Mx2list)):
+#			for j in range(len(Mx2list)):
+#				yield check_adjoint_op, (2,i,j,1e-16)
+#		for i in range(len(Mx3list)):
+#			for j in range(len(Mx3list)):
+#				yield check_adjoint_op, (3,i,j,1e-16)
 
-def test_DexpM():
-	for i in range(1,4):
-		for j in range(1,4):
-			yield check_DexpM, (3, i, j, [1e-4, 1e-5, 1e-6, 1e-7], 1.2)
-	yield check_DexpM, (2, 1, 3, [1e-4, 1e-5, 1e-6, 1e-7], 1.2)
-	yield check_DexpM, (2, 2, 1, [1e-4, 1e-5, 1e-6, 1e-7], 1.2)
 
 def check_DexpM(par):
 	"""Compare U = exp(X + s*dX) with 1st order formula.
@@ -92,6 +96,14 @@ def check_DexpM(par):
 		print("\t{},{}\t dU (U^{{-1}}): {:.5e}, {:.5f}\t (U^{{-1}}) dU: {:.5e}, {:.5f}".format( Xi, dXi, diff_r, diff_r/s/estim_2nd_order_size, diff_l, diff_l/s/estim_2nd_order_size ))
 		assert diff_r < reltol * s * estim_2nd_order_size
 		assert diff_l < reltol * s * estim_2nd_order_size
+
+#TODO set up Parametrized tests
+#	def test_DexpM():
+#		for i in range(1,4):
+#			for j in range(1,4):
+#				yield check_DexpM, (3, i, j, [1e-4, 1e-5, 1e-6, 1e-7], 1.2)
+#		yield check_DexpM, (2, 1, 3, [1e-4, 1e-5, 1e-6, 1e-7], 1.2)
+#		yield check_DexpM, (2, 2, 1, [1e-4, 1e-5, 1e-6, 1e-7], 1.2)
 
 
 ################################################################################

@@ -1,3 +1,13 @@
+##
+
+##	Check if this is run by nose or pytest
+import sys
+PyTSuite = None
+if 'nose' in sys.modules.keys(): PyTSuite = 'nose'
+if 'pytest' in sys.modules.keys(): PyTSuite = 'pytest'; import pytest
+
+################################################################################
+##	Begin test script
 import numpy as np
 from UnitaryChain import *
 
@@ -125,21 +135,31 @@ def check_grad_total_weight2(par):
 
 
 
-def test_grad_weight2():
-	yield check_grad_weight2_to_target, (65, 40.)
-	yield check_grad_weight2_to_target, (40, 40.)
-	yield check_grad_weight2_to_target, (90, 40.)
-	yield check_grad_weight2_to_target, (8102, 40.)
-	yield check_grad_weight2_at_step, (42, 2.)
-	yield check_grad_weight2_at_step, (52, 2.)
-	yield check_grad_weight2_at_step, (62, 2.)
-	yield check_grad_weight2_at_step, (72, 2.)
-	yield check_grad_total_weight2, (36, 30.)
-	yield check_grad_total_weight2, (46, 30.)
-	yield check_grad_total_weight2, (56, 30.)
-	yield check_grad_total_weight2, (66, 30.)
-	yield check_grad_total_weight2, (76, 30.)
-	yield check_grad_total_weight2, (2076, 30.)
+##	Parametrized tests
+t_grad_weight2_list = [
+	( check_grad_weight2_to_target, (65, 40.) ),
+	( check_grad_weight2_to_target, (40, 40.) ),
+	( check_grad_weight2_to_target, (90, 40.) ),
+	( check_grad_weight2_to_target, (8102, 40.) ),
+	( check_grad_weight2_at_step, (42, 2.) ),
+	( check_grad_weight2_at_step, (52, 2.) ),
+	( check_grad_weight2_at_step, (62, 2.) ),
+	( check_grad_weight2_at_step, (72, 2.) ),
+	( check_grad_total_weight2, (36, 30.) ),
+	( check_grad_total_weight2, (46, 30.) ),
+	( check_grad_total_weight2, (56, 30.) ),
+	( check_grad_total_weight2, (66, 30.) ),
+	( check_grad_total_weight2, (76, 30.) ),
+	( check_grad_total_weight2, (2076, 30.) ),
+	]
+
+if PyTSuite == 'pytest':
+	@pytest.mark.parametrize("chk_func, chk_par", t_grad_weight2_list)
+	def test_grad_weight2(chk_func, chk_par):
+		chk_func(chk_par)
+elif PyTSuite == 'nose':
+	def test_grad_weight2():
+		for cp in t_grad_weight2_list: yield cp
 
 
 
@@ -186,6 +206,6 @@ if __name__ == "__main__":
 	np.set_printoptions(linewidth=2000, precision=4, threshold=10000, suppress=False)
 
 	if 1:		# test derivative
-		for t,c in test_grad_weight2(): t(c)
+		for t,c in t_grad_weight2_list: t(c)
 		test_subdiv()
 
