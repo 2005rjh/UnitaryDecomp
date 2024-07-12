@@ -34,6 +34,12 @@ def Frob_norm(M):
 	return np.sum(np.abs(M)**2)
 
 
+def unitarize(M):
+	"""Given M, returns the 'closest' unitary matrix to M.  More precisely, the unitary in the polar decomposition of M."""
+	U, s, Vh = sp.linalg.svd(M, compute_uv=True, overwrite_a=False)
+	return U @ Vh
+
+
 def jlog_unitary(U):
 	"""Returns (1/i) log(U), a Hermitian matrix.  Assumes U is a unitary matrix."""
 	n = len(U)
@@ -41,6 +47,7 @@ def jlog_unitary(U):
 	##	Diagonalize matrix:  Ustep = Z @ T @ Z^dag
 	T,Z = sp.linalg.schur(U, output='complex')
 	arg_v = np.angle(np.diag(T))
+#TODO can make this more efficient
 	log_U = Z @ np.diag(arg_v) @ np.conj(np.transpose(Z))
 	return log_U
 
@@ -148,7 +155,8 @@ class UnitaryChain(object):
 		Utarget = self.Utarget
 		Vs = self.Vs
 		cache = self.cache
-		output = { 'Utarget unitarity': None, 'Vs unitarity': np.zeros(N+1), 'U_decomp err': -np.ones(N), }
+		output = { 'Utarget unitarity': None, 'Vs unitarity': np.zeros(N+1), 'U_decomp err': np.zeros(N+1), }
+		output['U_decomp err'].fill(-np.inf)
 	##	basic checks
 		assert type(d) == int and d > 0
 		assert type(N) == int and N > 0
@@ -209,6 +217,15 @@ class UnitaryChain(object):
 		self.cache['U_decomp'].pop(s, None)
 		self.cache['fragile'] = {}
 
+	def invalidate_cache_at_point(self, p):
+		#TODO documentatation
+		##	1 <= p <= N
+		self.cache['weights2'].pop(p - 1, None)
+		self.cache['weights2'].pop(p, None)
+		self.cache['U_decomp'].pop(p - 1, None)
+		self.cache['U_decomp'].pop(p, None)
+		self.cache['fragile'] = {}
+
 
 	##################################################
 	##	Retrieval
@@ -225,8 +242,7 @@ class UnitaryChain(object):
 	def jlogU(self, s):
 		"""Returns -i times the log of the unitary matrix U at step s, where 0 <= s < N."""
 		v, Z = self.U_decomp(s)
-#TODO, reduce the number of matrix of multiplications
-		return Z @ np.diag(v) @ Z.conj().T
+		return (Z * v[np.newaxis, :]) @ Z.conj().T
 
 
 	def U_to_target(self, V=None):
@@ -321,11 +337,11 @@ Can be overloaded."""
 		d = self.d
 		for s in range(N):
 			assert isinstance(Ulist[s], np.ndarray) and Ulist[s].shape == (d,d)
-		if unitarize_input: raise NotImplementedError #TODO fix
 	##	load data
 		self.N = N
 		self.Vs = [ np.eye(d) ] + [ None ] * N
 		for s in range(N):
+			if unitarize_input: raise NotImplementedError #TODO fix
 			self.Vs[s+1] = Ulist[s] @ self.Vs[s]
 		self.dtype = np.promote_types(self.Vs[N].dtype, self.dtype)
 		for s in range(N):
@@ -339,20 +355,20 @@ Can be overloaded."""
 p is an integer between 1 <= p <= N.  This will alter steps p-1 and p."""
 		assert isinstance(newV, np.ndarray) and newV.shape == (self.d, self.d)
 		self.Vs[p] = newV.astype(self.dtype, copy=True)
-		self.invalidate_cache_at_step(p - 1); self.invalidate_cache_at_step(p)
+		self.invalidate_cache_at_point(p)
 
 	def apply_U_to_V_at_point(self, p, U):
 		"""Update Vs[p] -> U Vs[p], where U is a d*d unitary matrix (assuming U is unitary).
 p is an integer between 1 <= p <= N.  This will alter steps p-1 and p."""
 		self.Vs[p] = U @ self.Vs[p]
-		self.invalidate_cache_at_step(p - 1); self.invalidate_cache_at_step(p)
+		self.invalidate_cache_at_point(p)
 
 	def apply_expiH_to_V_at_point(self, p, H):
 		"""Update Vs[p] -> exp[iH] Vs[p], where H is a d*d Hermitian matrix.
 p is an integer between 1 <= p <= N.  This will alter steps p-1 and p."""
 		A = 0.5j * ( H + np.conj(np.transpose(H)) )
 		self.Vs[p] = sp.linalg.expm(A) @ self.Vs[p]
-		self.invalidate_cache_at_step(p - 1); self.invalidate_cache_at_step(p)
+		self.invalidate_cache_at_point(p)
 
 
 	##################################################
@@ -425,14 +441,29 @@ If s < N, then this combines steps (s-1), s into one step.  If s == N, then this
 		self.check_consistency()
 
 
+	def unitarize_point(self, p):
+		"""Make Vs[p] unitary (via unitarize)."""
+		if p == 'all':
+			for i in range(1, self.N+1): self.unitarize_point(i)
+			return
+		assert isinstance(p, (int, np.integer))
+		assert p >= 1
+		#old_unitarity = np.max(np.abs( self.Vs[p] @ self.Vs[p].conj().T - np.eye(self.d) ))
+		self.Vs[p] = unitarize(self.Vs[p])
+		#new_unitarity = np.max(np.abs( self.Vs[p] @ self.Vs[p].conj().T - np.eye(self.d) ))
+		self.invalidate_cache_at_point(p)
+
+
 	def backup_Vs(self):
 		self.backupVs = [ self.Vs[i].copy() for i in range(self.N+1) ]
 		print("backup_Vs deprecated")
+		raise RuntimeError
 
 	def restore_from_backup_Vs(self):
 		self.Vs = [ self.backupVs[i].copy() for i in range(self.N+1) ]
 		self.reset_cache()
 		print("restore_from_backup_Vs deprecated")
+		raise RuntimeError
 
 
 	##################################################
@@ -451,7 +482,7 @@ exp[i v] are the eigenvalues of U, W are the eigenvectors, such that U = Z @ np.
 		T, Z = sp.linalg.schur(U, output='complex')
 	##	Assumes U is unitary, so T is diagonal.
 		v = np.angle(np.diag(T))
-		#log_U = Z @ np.diag(v) @ Z.conj().T
+		#j_log_U = Z @ np.diag(v) @ Z.conj().T
 		#print(np.max(np.abs( Z @ np.diag(np.exp(1j * v)) @ np.conj(np.transpose(Z)) - U )))
 		self.cache['U_decomp'][s] = (v, Z)
 		return v, Z
@@ -539,11 +570,11 @@ Formula:
 		if 'grad_w2 U2t0' in self.cache['fragile']:
 			gradHv = self.cache['fragile']['grad_w2 U2t0']
 			assert isinstance(gradHv, np.ndarray) and gradHv.shape == (N * d **2,)
-			print('grad_w2 U2t0')
+			print('chk: grad_w2 U2t0')
 		if 'grad_w2' in self.cache['fragile']:
 			gradHv = self.cache['fragile']['grad_w2']
 			assert isinstance(gradHv, np.ndarray) and gradHv.shape == (N * d **2,)
-			print('grad_w2')
+			print('chk: grad_w2')
 	##
 		output['err'] = max( output['ConjMxCom Herm'], output['MxComp compat'], output['U2t_0w_proj'], 0, output['err'] )
 		if type(tol) == float and output['err'] > tol:
@@ -585,12 +616,11 @@ This does not necessarily make weight_to_target vanish, since it doesn't enforce
 		U2t = self.U_to_target()
 		D = np.diag(U2t)
 		if np.any(np.abs(D) < 0.1): print("UnitaryChain_MxCompWeight.project_Vfinal():  Unreliable projection!")
+#TODO, how to use U2t projectors?
 		#v = np.angle(D)
-#		self.Vs[N] = np.diag(np.exp(-1j * v)) @ self.Utarget
+		#self.Vs[N] = np.diag(np.exp(-1j * v)) @ self.Utarget
 		self.Vs[N] = np.diag(D / np.abs(D)) @ self.Utarget
-		self.invalidate_cache_at_step(N - 1)
-		self.invalidate_cache_at_step(N)		#TODO this doesn't do anything yet
-		# no step N?
+		self.invalidate_cache_at_point(N)
 
 
 	def compute_grad_weight2_at_step(self, s):
@@ -608,7 +638,7 @@ Caution: gradient code may not work well if v is close to +-pi.
 		d = self.d
 		ConjMx = self.ConjMxComp_list
 		v, Z = self.U_decomp(s)
-		jlogU = Z @ np.diag(v) @ Z.conj().T		# is this needed?
+		#jlogU = Z @ np.diag(v) @ Z.conj().T		# is this needed?
 		## Conjugate each matrix in ConjMx, M -> Z^dag M Z
 		##	ZConjMx.shape = (nMx, d, d)
 		ZConjMx = np.tensordot(np.tensordot(Z.conj(), ConjMx, axes=[[0],[1]]), Z, axes=[2,0]).transpose(1,0,2)
@@ -708,7 +738,7 @@ Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix
 		small_ph = RNG.normal(scale=sigma, size=(self.d,))
 		if hasattr(self, 'U2t_nullweight_proj'): small_ph = np.dot(self.U2t_nullweight_proj, small_ph)
 		self.Vs[N] = np.exp(1j * small_ph)[:, np.newaxis] * self.Vs[N]		# left multiply by diagonal matrix
-		self.invalidate_cache_at_step(N - 1); self.invalidate_cache_at_step(N)
+		self.invalidate_cache_at_point(N)
 		self.check_consistency()		# optional
 
 
