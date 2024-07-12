@@ -9,6 +9,7 @@ if 'pytest' in sys.modules.keys(): PyTSuite = 'pytest'; import pytest
 ################################################################################
 ##	Begin test script
 import numpy as np
+import scipy as sp
 from UnitaryChain import *
 
 
@@ -196,6 +197,33 @@ def test_subdiv():
 	assert_close( UC.weight2_at_step(4) , exp_weight2[1] / 9 )
 	assert_close( UC.weight2_at_step(5) , exp_weight2[2] )
 	assert_close( UC.weight2_to_target() , 0. )
+	for s in range(UC.N):
+		jlogU = UC.jlogU(s)
+		diff = np.max(np.abs( sp.linalg.expm(1j * jlogU) -  UC.U(s) ))
+		print("Step {}:  | exp[logU] - U | = {}".format( s, diff ))
+		assert diff < 1e-14
+
+
+def test_UCunitarize():
+	RNG = init_RNG(222)
+	sigma = 0.01
+	UC = two_qubits_unitary(sp.linalg.expm([[0,0.1,0.1,-0.1],[-0.1,0,0,0.1],[-0.1,0,0,-0.1],[0.1,-0.1,0.1,0]]) @ F4);
+	UC.subdivide_at_step(0, 4)
+	print("before: ", UC.check_consistency())
+	for p in range(UC.N):
+		UC.Vs[p + 1] += RNG.normal(scale=sigma, size=(UC.d,UC.d))
+	#UC.unitarize_point(2)
+	print("after rand: ", UC.check_consistency(tol=10*sigma))
+	old_unitarity = np.array([ np.max(np.abs( UC.Vs[p] @ UC.Vs[p].conj().T - np.eye(UC.d) )) for p in range(1, UC.N+1) ])
+	assert np.all(old_unitarity > sigma/10)
+	UC.unitarize_point('all')
+	new_unitarity = np.array([ np.max(np.abs( UC.Vs[p] @ UC.Vs[p].conj().T - np.eye(UC.d) )) for p in range(1, UC.N+1) ])
+	print("  unitarity {} -> {}".format( old_unitarity, new_unitarity ))
+	print("after unitarize: ", UC.check_consistency())
+	for s in range(UC.N):
+		jlogU = UC.jlogU(s)
+		diff = np.max(np.abs( sp.linalg.expm(1j * jlogU) -  UC.U(s) ))
+		print("  Step {}:  | exp[logU] - U | = {}".format( s, diff ))
 	print("\n")
 
 
@@ -206,6 +234,7 @@ if __name__ == "__main__":
 	np.set_printoptions(linewidth=2000, precision=4, threshold=10000, suppress=False)
 
 	if 1:		# test derivative
-		for t,c in t_grad_weight2_list: t(c)
-		test_subdiv()
+#		for t,c in t_grad_weight2_list: t(c)
+#		test_subdiv()
+		test_UCunitarize()
 
