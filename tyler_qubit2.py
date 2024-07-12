@@ -1,6 +1,7 @@
 import numpy as np
 from UnitaryChain import *
 from stringtools import *
+from solutionary import *
 
 I2 = np.eye(2, dtype=float)
 PauliX = np.array([[0,1.],[1.,0]])
@@ -20,18 +21,6 @@ np.set_printoptions(precision=4, linewidth=10000, suppress=True)
 #UC = two_qubits_unitary(np.kron(PauliX,I2)*1j)		# Rabi 1
 #UC = two_qubits_unitary(np.kron(I2,PauliY)*1j)		# Rabi 2
 #UC = two_qubits_unitary(np.kron(PauliX,PauliX)*1j)		# conv + gain
-"""
-UC = two_qubits_unitary(CntrlZ)
-# print(UC.str(), UC.Vs)
-UC2 = [np.kron(Hadamard, Hadamard), np.array([[1/2**(1/2), 0, 0, 1j/2**(1/2)], [0, 1/2**(1/2), 1j/2**(2), 0], [0, 1j/2**(1/2), 1/2**(2), 0], [1j/2**(1/2), 0, 0, 1/2**(1/2)]], dtype=complex), np.kron(Hadamard, Hadamard)]
-
-UC2b = [np.array([[1/2, -1/2, -1/2, 1/2], [1/2, 1/2, -1/2, -1/2], [1/2, -1/2, 1/2, -1/2], [1/2, 1/2, 1/2, 1/2]], dtype=complex), np.array([[1/2**(1/2), 0, 0, 1j/2**(1/2)], [0, 1/2**(1/2), 1j/2**(1/2), 0], [0, 1j/2**(1/2), 1/2**(1/2), 0], [1j/2**(1/2), 0, 0, 1/2**(1/2)]], dtype=complex), np.array([[1/2, 1/2, 1/2, 1/2], [-1/2, 1/2, -1/2, 1/2], [-1/2, -1/2, 1/2, 1/2], [1/2, -1/2, -1/2, 1/2]], dtype=complex)]
-UC.load_U_to_V(UC2b)
-print(UC.str())
-# print(joinstr(UC.Vs[1:3]))
-for i in range(len(UC.Vs)):
-	print(to_mathematica_lists(UC.Vs[i]))
-"""
 ##	Initialize random number generator
 if np.version.version >= '1.17.0':
 	RNG = np.random.default_rng(55)
@@ -63,7 +52,7 @@ def rand_optimize(x, UC):
 
 
 def grad_optimize(UC):
-	grad_desc_step_size = 0.01
+	grad_desc_step_size = 0.0075
 	new_w = UC.weight_total()
 	print("start:   \t{}".format( new_w ))
 	for itr in range(5000):
@@ -86,21 +75,41 @@ def print_sol():
 	print("UC coef: ", UC.coef)
 	print("Step size: {} --- Randomizations: {} --- Subdivisions: {} parts of {}".format(grad_desc_step_size, rands, prim_sub, sub_sub))
 	print("Weight 1: ", UC.weight1_total(), "\tWeight 2: ", UC.weight_total())
-	for i in range(len(UC.Vs)):
-		print(to_mathematica_lists(UC.Vs[i]))
+	print(UC.str(verbose=3))
+
+def subdivide_optimize(prim_sub, sub_sub, UC):
+	for x in range(prim_sub):
+		UC.subdivide_at_step(x, sub_sub)
+		print("-"*5, "subdivided step {} by {}".format(x, sub_sub), "-"*5)
+		UC, grad_desc_step_size = grad_optimize(UC)
+	return UC, grad_desc_step_size
+#UC = two_qubits_unitary(CntrlZ)
 
 UC = two_qubits_unitary(CntrlZ)
 UC.set_coef(penalty=3.0)
+dictionary = solIndex()
+dictionary.load("tyler_sols.obj")
+UC = dictionary.access(3).copy()
+print(UC.coef)
+print(UC.str(verbose=3))
 
-prim_sub = 4
-sub_sub = 1
+prim_sub = 3
+sub_sub = 2
+rands = 1
+"""
 UC.subdivide_at_step(0, prim_sub)
-for x in range(prim_sub):
-	UC.subdivide_at_step(x, sub_sub)
 
-rands = 2
-for x in range(rands):
+for x in range(2):
 	UC = rand_optimize(1, UC)
 	UC, grad_desc_step_size = grad_optimize(UC)
+"""
+
+UC, grad_desc_step_size = subdivide_optimize(prim_sub, sub_sub, UC)
+UC, grad_desc_step_size = grad_optimize(UC)
 
 print_sol()
+
+query = input("\n\nSave solution? (y/n): ")
+if query == "y":
+	dictionary.add(UC)
+	dictionary.save("tyler_sols.obj")
