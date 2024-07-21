@@ -2,7 +2,7 @@ from UnitaryChain import *
 import pickle
 import numpy as np
 
-class solIndex():
+class solutionary():
 	def __init__(self):
 		self.sols = []
 

@@ -11,6 +11,7 @@ Hadamard = np.array([[1,1],[1,-1]], dtype=float) / np.sqrt(2)
 ##	Some example of two-body gates
 CntrlZ = np.diag([1.,1.,1.,-1.])
 CntrlX = np.array([[1,0,0,0],[0,1,0,0],[0,0,0,1],[0,0,1,0]], dtype=float)
+B = np.sqrt(2-np.sqrt(2))/2 * np.array([[1+np.sqrt(2), 0, 0, 1j], [0, 1, 1j*(1+np.sqrt(2)), 0], [0, 1j*(1+np.sqrt(2)), 1, 0], [1j, 0, 0, 1+np.sqrt(2)]])
 
 np.set_printoptions(precision=4, linewidth=10000, suppress=True)
 
@@ -52,7 +53,7 @@ def rand_optimize(x, UC):
 
 
 def grad_optimize(UC):
-	grad_desc_step_size = 0.0075
+	grad_desc_step_size = 0.005
 	new_w = UC.weight_total()
 	print("start:   \t{}".format( new_w ))
 	for itr in range(5000):
@@ -83,22 +84,21 @@ def subdivide_optimize(prim_sub, sub_sub, UC):
 		print("-"*5, "subdivided step {} by {}".format(x, sub_sub), "-"*5)
 		UC, grad_desc_step_size = grad_optimize(UC)
 	return UC, grad_desc_step_size
-#UC = two_qubits_unitary(CntrlZ)
 
 UC = two_qubits_unitary(CntrlZ)
-UC.set_coef(penalty=3.0)
-dictionary = solIndex()
+dictionary = solutionary()
 dictionary.load("tyler_sols.obj")
 UC = dictionary.access(3).copy()
+UC.set_coef(penalty=6.0)
 print(UC.coef)
 print(UC.str(verbose=3))
 
 prim_sub = 3
 sub_sub = 2
 rands = 1
-"""
-UC.subdivide_at_step(0, prim_sub)
 
+# UC.subdivide_at_step(0, prim_sub)
+"""
 for x in range(2):
 	UC = rand_optimize(1, UC)
 	UC, grad_desc_step_size = grad_optimize(UC)
@@ -112,4 +112,5 @@ print_sol()
 query = input("\n\nSave solution? (y/n): ")
 if query == "y":
 	dictionary.add(UC)
+	print("Saved as solution {}".format(dictionary.length()-1))
 	dictionary.save("tyler_sols.obj")
