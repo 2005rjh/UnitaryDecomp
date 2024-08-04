@@ -16,13 +16,16 @@ np.set_printoptions(precision=4, linewidth=10000, suppress=True)
 
 UC = two_qubits_unitary(CntrlZ)
 
-dictionary = solutionary()
-dictionary.load("tyler_sols.obj")
-
+dictionary = new_solutionary()
+dictionary.load("tyler_sols2.obj")
+keys = list(dictionary.keys())
+dictionary.print_sols()
+print(dictionary.index(3).str(verbose=3))
+"""
 for x in range(dictionary.length()):
-	print("-"*5, "SOLUTION {}".format(x), "-"*5, "\n"+dictionary.access(x).str(verbose=3))
-
-dictionary.save("tyler_sols.obj")
+	print("-"*5, "SOLUTION {}".format(keys[x]), "-"*5, "\n"+dictionary.index(x).str(verbose=3))
+"""
+dictionary.save("tyler_sols2.obj")
 """
 UC = two_qubits_unitary(CntrlZ)
 # print(UC.str(), UC.Vs)
