@@ -12,7 +12,7 @@ Hadamard = np.array([[1,1],[1,-1]], dtype=float) / np.sqrt(2)
 np.set_printoptions(precision=4, linewidth=10000, suppress=True)
 
 ##	Target the Hadamard gate
-UC = qubit_unitary(Hadamard)
+UC = qubit_UChain(Hadamard)
 #UC.subdivide_at_step(0, 3)		## split step 0 into 3 pieces
 # print(UC.str())
 
@@ -24,9 +24,9 @@ else:
 #for i in range(10):
 #	print( Gaussian_Hermitian(2, RNG=RNG) )
 
-UC = qubit_unitary(Hadamard)
-#UC = qubit_unitary(np.array([[0,1j],[1j,0]]))
-#UC = qubit_unitary(np.array([[1,1j],[1j,1]])/np.sqrt(2))
+UC = qubit_UChain(Hadamard)
+#UC = qubit_UChain(np.array([[0,1j],[1j,0]]))
+#UC = qubit_UChain(np.array([[1,1j],[1j,1]])/np.sqrt(2))
 UC.set_coef(penalty=5.)
 UC.subdivide_at_step(0, 3)
 print(UC.str())

@@ -371,6 +371,19 @@ p is an integer between 1 <= p <= N.  This will alter steps p-1 and p."""
 		self.invalidate_cache_at_point(p)
 
 
+	def unitarize_point(self, p):
+		"""Make Vs[p] unitary (via unitarize)."""
+		if p == 'all':
+			for i in range(1, self.N+1): self.unitarize_point(i)
+			return
+		assert isinstance(p, (int, np.integer))
+		assert p >= 1
+		#old_unitarity = np.max(np.abs( self.Vs[p] @ self.Vs[p].conj().T - np.eye(self.d) ))
+		self.Vs[p] = unitarize(self.Vs[p])
+		#new_unitarity = np.max(np.abs( self.Vs[p] @ self.Vs[p].conj().T - np.eye(self.d) ))
+		self.invalidate_cache_at_point(p)
+
+
 	##################################################
 	##	Tools to add/remove steps
 
@@ -441,19 +454,6 @@ If s < N, then this combines steps (s-1), s into one step.  If s == N, then this
 		self.check_consistency()
 
 
-	def unitarize_point(self, p):
-		"""Make Vs[p] unitary (via unitarize)."""
-		if p == 'all':
-			for i in range(1, self.N+1): self.unitarize_point(i)
-			return
-		assert isinstance(p, (int, np.integer))
-		assert p >= 1
-		#old_unitarity = np.max(np.abs( self.Vs[p] @ self.Vs[p].conj().T - np.eye(self.d) ))
-		self.Vs[p] = unitarize(self.Vs[p])
-		#new_unitarity = np.max(np.abs( self.Vs[p] @ self.Vs[p].conj().T - np.eye(self.d) ))
-		self.invalidate_cache_at_point(p)
-
-
 	def backup_Vs(self):
 		self.backupVs = [ self.Vs[i].copy() for i in range(self.N+1) ]
 		print("backup_Vs deprecated")
@@ -467,7 +467,7 @@ If s < N, then this combines steps (s-1), s into one step.  If s == N, then this
 
 
 	##################################################
-	##	Tools to compute weights and derivatives
+	##	Tools to manipulate unitaries, compute weights and derivatives
 
 	def U_decomp(self, s):
 		"""Computes the spectral decomposition of the unitary matrix U at step s.
@@ -498,6 +498,11 @@ exp[i v] are the eigenvalues of U, W are the eigenvectors, such that U = Z @ np.
 		"""Determines the 1st order change of (-i)logU (at step s) from altering Vs[s+1]."""
 		#TODO
 		raise NotImplementedError
+
+
+	## TODO:
+	##	apply_expiHlist_to_Vs
+	##	make something to interface with scipy.optimize.minimize
 
 
 	##	End of UnitaryChain class
@@ -745,7 +750,8 @@ Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix
 
 
 ################################################################################
-class qubit_unitary(UnitaryChain_MxCompWeight):
+# TODO, rename to qubit_UChain
+class qubit_UChain(UnitaryChain_MxCompWeight):
 	"""Specialize to 1 single qubit.
 
 coefficients:
@@ -766,8 +772,7 @@ coefficients:
 		self.coef = {'Rabi':1., 'penalty':np.sqrt(15)}
 		self.set_coef()
 	##	Set up weights
-		qubit_unitary.set_up_MxComp_lists()
-		self.U2t_DiagTests = []		# no constraints on the phases of U_to_target
+		qubit_UChain._set_up_MxComp_lists()
 	##	Done!
 		#self.check_consistency()		# optional
 
@@ -793,14 +798,15 @@ coefficients:
 
 
 	@classmethod
-	def set_up_MxComp_lists(cls):
-		if hasattr(qubit_unitary, 'ConjMxComp_list'): return
-		qubit_unitary.PauliList = np.array([cls.I2, cls.PX, cls.PY, cls.PZ])
-		qubit_unitary.PauliList.flags.writeable = False
-		assert qubit_unitary.PauliList.shape == (4,2,2)
-		qubit_unitary.MxComp_list = qubit_unitary.PauliList
-		qubit_unitary.ConjMxComp_list = qubit_unitary.PauliList / 2
-		qubit_unitary.ConjMxComp_list.flags.writeable = False
+	def _set_up_MxComp_lists(cls):
+		if hasattr(qubit_UChain, 'ConjMxComp_list'): return
+		qubit_UChain.PauliList = np.array([cls.I2, cls.PX, cls.PY, cls.PZ])
+		qubit_UChain.PauliList.flags.writeable = False
+		assert qubit_UChain.PauliList.shape == (4,2,2)
+		qubit_UChain.MxComp_list = qubit_UChain.PauliList
+		qubit_UChain.ConjMxComp_list = qubit_UChain.PauliList / 2
+		qubit_UChain.ConjMxComp_list.flags.writeable = False
+		qubit_UChain.U2t_DiagTests = []		# no constraints on the phases of U_to_target
 
 
 	def _old_compute_weight2_at_step(self, s):
@@ -848,8 +854,7 @@ From (-i)log(U),
 		self.coef = {'Rabi1':0.1, 'Rabi2':1, 'penalty':5.}
 		self.set_coef()
 	##	Set up weights
-		two_qubits_unitary.set_up_Pauli_operators()
-		self.U2t_DiagTests = [ (0,1,2,3), ]		# check how close the diagonal is to a Kronecker product
+		two_qubits_unitary._set_up_2Q_static_data()
 	##	Done!
 		#self.check_consistency()		# optional
 
@@ -878,8 +883,9 @@ From (-i)log(U),
 
 
 	@classmethod
-	def set_up_Pauli_operators(cls):
-		if hasattr(two_qubits_unitary, 'P2list'): return
+	def _set_up_2Q_static_data(cls):
+		"""This function sets up a bunch static data associated with the two_qubits_unitary class."""
+		if hasattr(two_qubits_unitary, 'P2list') and hasattr(two_qubits_unitary, 'U2t_DiagTests'): return
 		##	Pauli list:  11, 1X, 1Y, 1Z, X1, XX, XY, ..., ZY, ZZ
 		two_qubits_unitary.P2list = np.array([ np.kron(P1,P2) for P1 in two_qubits_unitary.PauliList for P2 in two_qubits_unitary.PauliList ])
 		two_qubits_unitary.P2list.flags.writeable = False
@@ -887,8 +893,13 @@ From (-i)log(U),
 		two_qubits_unitary.MxComp_list = two_qubits_unitary.P2list
 		two_qubits_unitary.ConjMxComp_list = two_qubits_unitary.P2list / 4
 		two_qubits_unitary.ConjMxComp_list.flags.writeable = False
+		##	for reference: MxComp_weights2 = [ pe, R1, R1, pe, R1, 2*R2, 2*R2, pe, R1, 2*R2, 2*R2, pe, pe, pe, pe, pe ]
+		two_qubits_unitary.R1_comps = np.array([0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+		two_qubits_unitary.R2_comps = np.array([0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0])
+		two_qubits_unitary.pe_comps = np.ones(16) - two_qubits_unitary.R1_comps - two_qubits_unitary.R2_comps
 		two_qubits_unitary.U2t_nullweight_proj = np.array([[3,1,1,-1],[1,3,-1,1],[1,-1,3,1],[-1,1,1,3]], dtype=float) / 4
 		two_qubits_unitary.U2t_nullweight_proj.flags.writeable = False
+		two_qubits_unitary.U2t_DiagTests = [ (0,1,2,3), ]		# used to check how close the diagonal is to a Kronecker product
 
 
 #	def check_consistency(self, tol=1e-13):
@@ -896,6 +907,10 @@ From (-i)log(U),
 #		assert self.d == 4
 #		return output
 #	#TODO check_consistency to check for coef
+
+
+	##	TODO
+	##	def decomp_jlogU(jlogU):
 
 
 	def step_str(self, s, verbose=3):
@@ -926,7 +941,7 @@ From (-i)log(U),
 	##	compute_weight2_at_step() and compute_weight2_to_target() derived from UnitaryChain_MxCompWeight
 
 
-	#TODO, old code
+	#TODO remove, old code
 	def _old_compute_weight2_to_target(self, U2t):
 		"""Provides the weight of U_to_target.  This function measures how far U_to_target is to a phase gate on either qubit."""
 		weight = Frob_norm(np.triu(U2t, k=1) + np.tril(U2t, k=-1))	# off diagonal term
@@ -942,6 +957,21 @@ From (-i)log(U),
 		##	Pauli components: Pcomp[i] = tr(P2[i] . logU) / 2pi, or logU = (pi/2) sum_i Pcomp[i] P2[i]
 		MxComps = np.array([ np.sum(P * logUT) for P in two_qubits_unitary.P2list ]).real / (2 * np.pi)
 		return np.sum(MxComps**2 * self.MxComp_weights2)
+
+
+
+################################################################################
+# TODO, rename to two_qubits_UChain
+class three_qubits_UChain(UnitaryChain_MxCompWeight):
+	pass
+	## TODO
+
+#	three_qubits_UChain.U2t_DiagTests = [ (0,1,2,3), (0,1,4,5), (0,2,4,6), (1,3,5,7), (2,3,6,7), (4,5,6,7), ]
+##	there are 12 possible quadruplets:
+##		from (0,3)=(1,2) , (0,5)=(1,4) , (0,6)=(2,4) , (0,7)=(1,6)=(2,5)=(3,4) , (1,7)=(3,5) , (2,7)=(3,6) , (4,7)=(5,6)
+##		(0,1,2,3) (0,1,4,5) (0,1,6,7) (0,2,4,6) (0,2,5,7) (0,3,4,7) (1,2,5,6) (1,3,4,6) (1,3,5,7) (2,3,4,5) (2,3,6,7) (4,5,6,7)
+##	there are, for example, not quadruplets: (0,3,5,6) (1,2,4,7)
+
 
 
 

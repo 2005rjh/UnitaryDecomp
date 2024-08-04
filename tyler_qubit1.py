@@ -73,10 +73,10 @@ else:
 
 # Optimize by subdivisions
 """
-mini = qubit_unitary(Hadamard)
+mini = qubit_UChain(Hadamard)
 minix = 0
 for x in range(1, 5):
-    UC = qubit_unitary(Hadamard)
+    UC = qubit_UChain(Hadamard)
     new = optimize(UC, x, 0.013)
     if mini.weight_total() > new.weight_total():
         mini = new
@@ -86,10 +86,10 @@ print("\n\nThe smallest configuration is:\n", mini.str(), "\nat {} subdivisions"
 
 # Optimize by sigma
 """
-mini = qubit_unitary(Hadamard)
+mini = qubit_UChain(Hadamard)
 miniy = 0
 for y in range(1, 15):
-    UC = qubit_unitary(Hadamard)
+    UC = qubit_UChain(Hadamard)
     new = optimize(UC, minix, y/1000)
     if mini.weight_total() > new.weight_total():
         mini = new
@@ -98,17 +98,17 @@ print("\n\nThe smallest configuration is:\n", mini.str(), "\nat sigma={}".format
 """
 """
 # Optimize subdivisions by distance
-mini = optimize(qubit_unitary(Hadamard), 1, 0.013)
+mini = optimize(qubit_UChain(Hadamard), 1, 0.013)
 minix = 1
 for x in range(2, 6):
-    UC = qubit_unitary(Hadamard)
+    UC = qubit_UChain(Hadamard)
     new = optimize(UC, x, 0.013)
     if mini.weight_to_target() > new.weight_to_target():
         mini = new
         minix = x
 print("\n\nThe best approximation is:\n", mini.str(), "\nat {} subdivisions".format(minix))
 """
-rand_optimize(qubit_unitary(Hadamard), 3, 0.05)
-grad_optimize(qubit_unitary(Hadamard), 3, 0.01, 5.0)
+rand_optimize(qubit_UChain(Hadamard), 3, 0.05)
+grad_optimize(qubit_UChain(Hadamard), 3, 0.01, 5.0)
 # UC.subdivide_at_step(0, 2)		## split step 0 into 3 pieces
 # UC.subdivide_at_step(1, 4)		## then, split step 1 into 2 pieces

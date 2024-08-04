@@ -12,7 +12,7 @@ Hadamard = np.array([[1,1],[1,-1]], dtype=float) / np.sqrt(2)
 np.set_printoptions(precision=4, linewidth=10000, suppress=True)
 
 ##	Target the Hadamard gate
-UC = qubit_unitary(Hadamard)
+UC = qubit_UChain(Hadamard)
 ##UC.subdivide_at_step(0, 3)		## split step 0 into 3 pieces
 ##UC.subdivide_at_step(1, 2)		## then, split step 1 into 2 pieces
 for i in range(UC.N):

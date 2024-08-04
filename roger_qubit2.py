@@ -59,8 +59,8 @@ if 1:
 			for stp in range(1, UC.N+1):
 				UC.apply_expiH_to_V_at_point(stp, -gradH[stp] * grad_desc_step_size)
 				new_w = UC.weight_total()
-			if np.mod(itr, 50) == 0: print("iter {}:  \t{} \t(w1 = {})".format( itr, new_w, UC.weight1_total() ))
-			if np.mod(itr, 17) == 0: UC.check_consistency()
+			if np.mod(itr, 50) == 0: print("iter {}:  \t{} \t(w1 = {})\tchk err = {}".format( itr, new_w, UC.weight1_total(), UC.check_consistency()['err'] ))
+			if np.mod(itr, 81) == 0: UC.check_consistency()
 			if new_w > old_w: print("Uh oh...")
 			if new_w + 1e-8 > old_w: break
 
