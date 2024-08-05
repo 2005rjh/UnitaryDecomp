@@ -261,7 +261,7 @@ if PyTSuite == 'pytest':
 elif PyTSuite == 'nose':
 	def test_grad_weight2():
 		for cp in t_grad_weight2_list: yield cp
-	def test_UC_unitarize(chk_func, chk_par):
+	def test_UC_unitarize():
 		for cp in t_UC_unitarize_list: yield cp
 
 
