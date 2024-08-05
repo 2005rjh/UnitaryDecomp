@@ -44,11 +44,11 @@ if 1:
 	UC.set_coef(Rabi1 = 0.2)
 	UC.load_from_Ulist([ np.kron( [[1,-1],[1,1]], [[1,-1],[1,1]] )/2. ,
 		np.array([ [1,0,0,1j], [0,1,1j,0], [0,1j,1,0], [1j,0,0,1] ])/np.sqrt(2) ,
-		np.kron( [[1,1],[-1,1]], [[1,1],[-1,1]] ) / 2. , ])
+		np.kron( [[1,1],[-1,1]], [[1,1],[-1,1]] )/2. , ])
 	print(UC.str(verbose = 2))
 
 	if 1:
-		UC.apply_random_small_phase_to_Vfinal(RNG=RNG, sigma=0.01)
+		UC.apply_random_small_phases_to_Vfinal(RNG=RNG, sigma=0.01)
 		#print(UC.str(verbose = 3))
 		grad_desc_step_size = 0.01
 		new_w = UC.weight_total()

@@ -11,6 +11,7 @@ if 'pytest' in sys.modules.keys(): PyTSuite = 'pytest'; import pytest
 import numpy as np
 import scipy as sp
 from UnitaryChain import *
+from stringtools import joinstr
 
 
 sqrt2 = np.sqrt(2)
@@ -34,7 +35,12 @@ Mx3list = [
 	np.array([[0,0,-1],[1,1.5,0],[0,0.5j,0.5]]),
 	np.array([[0,0,-1],[1,0,0],[0,0,0]]),
 	]
+Arr234list = [
+	np.arange(24).reshape(2,3,4),
+	np.arange(24).reshape(2,3,4) - 11,
+	]
 MxLists = [None, None, Mx2list, Mx3list]
+ArrayDict = { (2,2): Mx2list, (3,3): Mx3list, (2,3,4): Arr234list, }
 
 
 ################################################################################
@@ -106,6 +112,47 @@ def check_DexpM(par):
 #		yield check_DexpM, (2, 2, 1, [1e-4, 1e-5, 1e-6, 1e-7], 1.2)
 
 
+def check_rank1tensor_approx(par):
+	arr_sh, arr_i, exp_overlap, tol = par
+	a = ArrayDict[arr_sh][arr_i]
+	a_norm = Frob_norm(a)
+	print("tensor: {}[{}],  norm = {}".format( arr_sh, arr_i, a_norm ))
+	assert a.shape == arr_sh
+	ap = rank1tensor_approx(a)
+	overlap = np.sum(a.conj() * ap) / a_norm
+	print(joinstr(["  array =", a]) + "\n" + joinstr(["  approx =", ap]) + "\n  overlap = " + str(overlap))
+	assert ap.shape == a.shape
+	assert overlap > exp_overlap - tol
+	assert abs(overlap.imag) < tol
+	assert ap.dtype == np.promote_types(a.dtype, float)
+	app = rank1tensor_approx(ap)
+	diff = np.max(np.abs( app - ap ))
+	print("  2nd run diff =", diff)
+	assert app.shape == ap.shape
+	assert app.dtype == ap.dtype
+	assert diff < tol
+	print()
+
+
+t_rank1tensor_approx_list = [
+	( check_rank1tensor_approx, ((2,2), 4, 0.5 , 1e-13) ),	# Hadamard
+	( check_rank1tensor_approx, ((3,3), 0, 0.99, 1e-13) ),
+	( check_rank1tensor_approx, ((3,3), 1, 0.81, 1e-13) ),
+	( check_rank1tensor_approx, ((3,3), 2, 0.92, 1e-13) ),
+	( check_rank1tensor_approx, ((3,3), 3, 0.72, 1e-13) ),
+	( check_rank1tensor_approx, ((3,3), 4, 0.5 , 1e-13) ),
+	]
+
+if PyTSuite == 'pytest':
+	@pytest.mark.parametrize("chk_func, chk_par", t_rank1tensor_approx_list)
+	def test_rank1tensor_approx(chk_func, chk_par):
+		chk_func(chk_par)
+elif PyTSuite == 'nose':
+	def test_rank1tensor_approx():
+		for cp in t_rank1tensor_approx_list: yield cp
+
+
+
 ################################################################################
 if __name__ == "__main__":
 	print("==================== Test matrix identities ====================")
@@ -114,9 +161,9 @@ if __name__ == "__main__":
 	if 0:
 		for t,c in test_adjoint_op(): t(c)
 	#check_DexpM((2, 1, 3, [1e-4, 1e-5, 1e-6, 1e-7], 3.))
-	if 1:
+	if 0:
 		for t,c in test_DexpM(): t(c)
 
+	#check_rank1tensor_approx(((2,3,4), 0, 0.3, 1e-13))
 	#TODO, write check_log_unitary
-
 

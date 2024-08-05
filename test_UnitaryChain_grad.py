@@ -104,7 +104,7 @@ def check_grad_total_weight2(par):
 	rand_seed, tol_factor = par
 	print("check_grad_total_weight2(rand_seed = {}, tol_factor = {})".format( rand_seed, tol_factor ))
 	RNG = init_RNG(rand_seed)
-	
+
 	Utarget = np.kron( [[4,1],[-1,4]] , [[2j,1],[1,2j]] ) / np.sqrt(17 * 5) @ F4 @ np.diag([1,1,1,np.exp(1j*np.pi/6)])
 	UC0 = two_qubits_unitary(Utarget)
 	UC0.subdivide_at_step(0, 4)
@@ -133,34 +133,6 @@ def check_grad_total_weight2(par):
 		#print( second_order_comp , eps * UC0.coef['penalty']**2 )
 		assert np.abs(second_order_comp) < eps * UC0.coef['penalty']**2 * tol_factor
 	print('\n')
-
-
-
-##	Parametrized tests
-t_grad_weight2_list = [
-	( check_grad_weight2_to_target, (65, 40.) ),
-	( check_grad_weight2_to_target, (40, 40.) ),
-	( check_grad_weight2_to_target, (90, 40.) ),
-	( check_grad_weight2_to_target, (8102, 40.) ),
-	( check_grad_weight2_at_step, (42, 2.) ),
-	( check_grad_weight2_at_step, (52, 2.) ),
-	( check_grad_weight2_at_step, (62, 2.) ),
-	( check_grad_weight2_at_step, (72, 2.) ),
-	( check_grad_total_weight2, (36, 30.) ),
-	( check_grad_total_weight2, (46, 30.) ),
-	( check_grad_total_weight2, (56, 30.) ),
-	( check_grad_total_weight2, (66, 30.) ),
-	( check_grad_total_weight2, (76, 30.) ),
-	( check_grad_total_weight2, (2076, 30.) ),
-	]
-
-if PyTSuite == 'pytest':
-	@pytest.mark.parametrize("chk_func, chk_par", t_grad_weight2_list)
-	def test_grad_weight2(chk_func, chk_par):
-		chk_func(chk_par)
-elif PyTSuite == 'nose':
-	def test_grad_weight2():
-		for cp in t_grad_weight2_list: yield cp
 
 
 
@@ -204,27 +176,94 @@ def test_subdiv():
 		assert diff < 1e-14
 
 
-def test_UCunitarize():
-	RNG = init_RNG(222)
-	sigma = 0.01
-	UC = two_qubits_unitary(sp.linalg.expm([[0,0.1,0.1,-0.1],[-0.1,0,0,0.1],[-0.1,0,0,-0.1],[0.1,-0.1,0.1,0]]) @ F4);
+def check_UC_unitarize(par):
+	cls, sigma, RNG_seed = par
+	RNG = init_RNG(RNG_seed)
+	tol = 1e-13
+##	Hard-code the target unitary
+	if cls == qubit_UChain:
+		Utarget = sp.linalg.expm([[0.3j,0.4-3j],[-0.4-3j,-2.5j]])
+	elif cls == two_qubits_unitary:
+		Utarget = sp.linalg.expm([[0,0.1,0.1,-0.1],[-0.1,0,0,0.1],[-0.1,0,0,-0.1],[0.1,-0.1,0.1,0]]) @ F4
+	UC = cls(Utarget)
+	print("==== check_UC_unitarize() ====\n{}".format( cls ))
 	UC.subdivide_at_step(0, 4)
-	print("before: ", UC.check_consistency())
+	UC.del_Vs(1)
+##
+	print(UC.str(verbose = 1))
+	w2t_0 = UC.weight2_to_target()
+	print("[before]  w2t =", w2t_0, "\n", UC.check_consistency(), "\n")
+#	assert w2t_0 < (1e-13)**2
+##	Multiply by some random stuff
 	for p in range(UC.N):
 		UC.Vs[p + 1] += RNG.normal(scale=sigma, size=(UC.d,UC.d))
 	#UC.unitarize_point(2)
-	print("after rand: ", UC.check_consistency(tol=10*sigma))
+	w2t_1 = UC.weight2_to_target()
+	print("[after rand]  w2t =", w2t_1, "\n", UC.check_consistency(tol=10*sigma), "\n")
 	old_unitarity = np.array([ np.max(np.abs( UC.Vs[p] @ UC.Vs[p].conj().T - np.eye(UC.d) )) for p in range(1, UC.N+1) ])
 	assert np.all(old_unitarity > sigma/10)
+##	Unitarize
 	UC.unitarize_point('all')
 	new_unitarity = np.array([ np.max(np.abs( UC.Vs[p] @ UC.Vs[p].conj().T - np.eye(UC.d) )) for p in range(1, UC.N+1) ])
-	print("  unitarity {} -> {}".format( old_unitarity, new_unitarity ))
-	print("after unitarize: ", UC.check_consistency())
+	w2t_2 = UC.weight2_to_target()
+	Vfinal_2 = UC.Vfinal()
+	print("[after unitarize]  w2t =", w2t_2, "\n", UC.check_consistency())
 	for s in range(UC.N):
 		jlogU = UC.jlogU(s)
 		diff = np.max(np.abs( sp.linalg.expm(1j * jlogU) -  UC.U(s) ))
 		print("  Step {}:  | exp[logU] - U | = {}".format( s, diff ))
+	print("unitarity {} -> {}".format( old_unitarity, new_unitarity ), "\n")
+	assert w2t_2 > (UC.coef['penalty'] * sigma)**2 / 3.
+##	Call force_weight2t_to_zero()
+	UC.force_weight2t_to_zero()
+	w2t_3 = UC.weight2_to_target()
+	Vfinal_3 = UC.Vfinal()
+	print("[after force w2t -> 0]  w2t =", w2t_3, "\n", UC.check_consistency())
+	assert w2t_3 < tol
+##	Call force_weight2t_to_zero() again
+	UC.force_weight2t_to_zero()
+	Vfinal_4 = UC.Vfinal()
+	diff_34 = np.max(np.abs(Vfinal_3 - Vfinal_4))
+	assert diff_34 < tol
 	print("\n")
+
+
+
+##	Parametrized tests
+t_grad_weight2_list = [
+	( check_grad_weight2_to_target, (65, 40.) ),
+	( check_grad_weight2_to_target, (40, 40.) ),
+	( check_grad_weight2_to_target, (90, 40.) ),
+	( check_grad_weight2_to_target, (8102, 40.) ),
+	( check_grad_weight2_at_step, (42, 2.) ),
+	( check_grad_weight2_at_step, (52, 2.) ),
+	( check_grad_weight2_at_step, (62, 2.) ),
+	( check_grad_weight2_at_step, (72, 2.) ),
+	( check_grad_total_weight2, (36, 30.) ),
+	( check_grad_total_weight2, (46, 30.) ),
+	( check_grad_total_weight2, (56, 30.) ),
+	( check_grad_total_weight2, (66, 30.) ),
+	( check_grad_total_weight2, (76, 30.) ),
+	( check_grad_total_weight2, (2076, 30.) ),
+	]
+t_UC_unitarize_list = [
+	( check_UC_unitarize, (two_qubits_unitary, 0.01, 222) ),
+	( check_UC_unitarize, (qubit_UChain, 0.01, 333) ),
+	]
+
+if PyTSuite == 'pytest':
+	@pytest.mark.parametrize("chk_func, chk_par", t_grad_weight2_list)
+	def test_grad_weight2(chk_func, chk_par):
+		chk_func(chk_par)
+	@pytest.mark.parametrize("chk_func, chk_par", t_UC_unitarize_list)
+	def test_UC_unitarize(chk_func, chk_par):
+		chk_func(chk_par)
+elif PyTSuite == 'nose':
+	def test_grad_weight2():
+		for cp in t_grad_weight2_list: yield cp
+	def test_UC_unitarize(chk_func, chk_par):
+		for cp in t_UC_unitarize_list: yield cp
+
 
 
 
@@ -236,5 +275,6 @@ if __name__ == "__main__":
 	if 1:		# test derivative
 #		for t,c in t_grad_weight2_list: t(c)
 #		test_subdiv()
-		test_UCunitarize()
+		for t,c in t_UC_unitarize_list:
+			t(c)
 

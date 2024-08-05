@@ -1,7 +1,9 @@
 import numpy as np
 import scipy as sp
 import scipy.special
-if np.version.version < '1.17.0': import scipy.linalg
+if np.version.version < '1.17.0':
+	import scipy.linalg
+	import scipy.sparse.linalg
 import stringtools
 
 ## Note: we always use tabs for indentation
@@ -29,6 +31,24 @@ def zero_real_if_close(a, tol=1e-14):
 	return zic_a.real
 
 
+def rank1tensor_approx(a):
+	"""Find a rank-1 tensor approximation to input tensor (a).
+Returns an nd-array with the same shape as the input.
+Note: the returned array may having a different dtype (e.g. float if input is int)."""
+	ndim = a.ndim
+	sh = a.shape
+	## TODO: checks on shape?
+	if ndim <= 1: return a.copy()
+	if ndim == 2:
+		U, s, Vh = sp.linalg.svd(a, full_matrices=False, compute_uv=True, check_finite=True)
+		return np.outer(U[:,0], s[0] * Vh[0])
+		## TODO: consider using sparse scipy.sparse.linalg.svds
+	raise NotImplementedError
+	##	TODO: alternating least squares (ALS) or alternating SVD (ASVD) method
+
+
+##################################################
+## Matrix functions
 def Frob_norm(M):
 	#return np.linalg.norm(M, ord='fro')
 	return np.sum(np.abs(M)**2)
@@ -62,6 +82,8 @@ def jlog_unitary_old(U):
 	return log_U
 
 
+##################################################
+##	Random matrices
 def Gaussian_Hermitian(n, RNG=None, sigma=1.0):
 	"""Return an n*n Hermitian matrix where each element is pull from a Gaussian distribution."""
 	M = RNG.normal(scale=sigma, size=(n,n))
@@ -70,8 +92,18 @@ def Gaussian_Hermitian(n, RNG=None, sigma=1.0):
 	return np.diag(np.diag(M)) + Mupper.transpose() + Mupper + 1j * Mlower - 1j * Mlower.transpose()
 
 
+def random_Unitary(n, RNG=None):
+	"""Return a Haar-random unitary matrix."""
+	assert isinstance(n, (int, np.integer))
+	A = RNG.normal(scale=1, size=(n,n)) + 1j * RNG.normal(scale=1, size=(n,n))
+	Q, R = sp.linalg.qr(A, mode='full', pivoting=False)
+	RD = np.diag(R)
+	return Q * (np.abs(RD)/RD)
+
+
 def random_small_Unitary(n, RNG=None, sigma=1.0):
 	"""Return a unitary matrix close to the identity."""
+	assert isinstance(n, (int, np.integer))
 	return sp.linalg.expm(1j * Gaussian_Hermitian(n, RNG=RNG, sigma=sigma))
 
 
@@ -218,8 +250,8 @@ class UnitaryChain(object):
 		self.cache['fragile'] = {}
 
 	def invalidate_cache_at_point(self, p):
-		#TODO documentatation
-		##	1 <= p <= N
+		"""Invalidate any cache data that depends on Vs[p].
+This includes calculations that depends on steps (p-1) or (p).  Assumes 1 <= p <= N."""
 		self.cache['weights2'].pop(p - 1, None)
 		self.cache['weights2'].pop(p, None)
 		self.cache['U_decomp'].pop(p - 1, None)
@@ -441,14 +473,14 @@ The resulting UnitaryChain has (num_div-1) extra steps."""
 			self.subdivide_at_step(s, num_divs[s])
 
 
-	def del_Vs(self, s):
-		"""Delete Vs[s] from the list, where 0 < s <= N.
-If s < N, then this combines steps (s-1), s into one step.  If s == N, then this removes the final step and makes Vs[N-1] the new Vfinal."""
+	def del_Vs(self, p):
+		"""Delete Vs[p] from the list, where 0 < p <= N.
+If p < N, then this combines steps (p-1), p into one step.  If p == N, then this removes the final step and makes Vs[N-1] the new Vfinal."""
 		N = self.N
 		if N == 1: raise RuntimeError("Can't have less than one step.")
-		assert isinstance(s, (int, np.integer))
-		assert 0 < s and s <= N
-		del self.Vs[s]
+		assert isinstance(p, (int, np.integer))
+		assert 0 < p and p <= N
+		del self.Vs[p]
 		self.N = N - 1
 		self.reset_cache()		#TODO, update cache more nuanced way
 		self.check_consistency()
@@ -602,11 +634,11 @@ Formula:
 		"""Provides the weight of U_to_target.  This function measures how far U_to_target is to a phase gate on either qubit."""
 		dist2 = 0		# how 'far' U2t is from an acceptible phase gate
 		D = np.diag(U2t)		# diagonal part of U2t
-		##	we penalize off-diagonal terms and how far the diagonal are pure phases
-		## since frobnorm(U) = d, we only need the diagonal elements to compute the distance
-		dist2 += 2 * np.sum(1 - np.abs(D)**2)		# measures how far the diagonal terms are to pure phases
-		if dist2 < 0: dist2 = 0
-		##	equvalent to: dist2 += Frob_norm(np.triu(U2t, k=1) + np.tril(U2t, k=-1)) + np.sum(1 - np.abs(D)**2)
+		##	we penalize off-diagonal terms and how far the diagonal are pure phases, computing:
+		##		dist2 += Frob_norm(np.triu(U2t, k=1) + np.tril(U2t, k=-1)) + np.sum(1 - np.abs(D)**2)
+		## since frobnorm(U) = d, the two terms are actually equal
+		##	however, the latter term may be negative due to numerical errors, so we use the only former term
+		dist2 += 2 * Frob_norm(np.triu(U2t, k=1) + np.tril(U2t, k=-1))
 		#print("OD weight =", dist2); return dist2
 		for chk in self.U2t_DiagTests:
 			dist2 += np.abs( D[chk[0]] * D[chk[3]] - D[chk[1]] * D[chk[2]] )**2
@@ -617,14 +649,10 @@ Formula:
 		"""Alter Vfinal such that it is diagonal (and unitary).
 This does not necessarily make weight_to_target vanish, since it doesn't enforce the U2t_DiagTests."""
 		N = self.N
-		d = self.d
 		U2t = self.U_to_target()
 		D = np.diag(U2t)
 		if np.any(np.abs(D) < 0.1): print("UnitaryChain_MxCompWeight.project_Vfinal():  Unreliable projection!")
-#TODO, how to use U2t projectors?
-		#v = np.angle(D)
-		#self.Vs[N] = np.diag(np.exp(-1j * v)) @ self.Utarget
-		self.Vs[N] = np.diag(D / np.abs(D)) @ self.Utarget
+		self.Vs[N] = np.diag(D.conj() / np.abs(D)) @ self.Utarget
 		self.invalidate_cache_at_point(N)
 
 
@@ -696,7 +724,6 @@ Specifically:  d weight2_total( exp[i H[1]) . Vs[1] , ..., exp[i H[N]) . Vs[N] )
 Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix for 1 <= s <= N.
 """
 #TODO, explain enforce_U2t_0weight
-#TODO, cache result
 		assert output_form == 'MxList' or output_form == 'vec'
 		d = self.d
 		N = self.N
@@ -737,7 +764,7 @@ Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix
 		else: return gradH
 
 
-	def apply_random_small_phase_to_Vfinal(self, RNG=None, sigma=0):
+	def apply_random_small_phases_to_Vfinal(self, RNG=None, sigma=0):
 		"""Modify Vfinal (and hence the last U step and U_to_target) such that weight_to_final remains unchanged."""
 		N = self.N
 		small_ph = RNG.normal(scale=sigma, size=(self.d,))
@@ -750,7 +777,6 @@ Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix
 
 
 ################################################################################
-# TODO, rename to qubit_UChain
 class qubit_UChain(UnitaryChain_MxCompWeight):
 	"""Specialize to 1 single qubit.
 
@@ -809,6 +835,13 @@ coefficients:
 		qubit_UChain.U2t_DiagTests = []		# no constraints on the phases of U_to_target
 
 
+	def force_weight2t_to_zero(self):
+		"""Fixes Vs[N] such that weight2_to_target vanishes."""
+		self._Vfinal_remove_OD()
+		self.check_consistency()
+
+
+## old stuff
 	def _old_compute_weight2_at_step(self, s):
 		logU = self.jlogU(s)
 		weight = ( np.abs(logU[0,0]**2) + np.abs(logU[1,1]**2) ) * self.coef['penalty']**2
@@ -938,6 +971,16 @@ From (-i)log(U),
 		return outstr
 
 
+	def force_weight2t_to_zero(self):
+		"""Fixes Vs[N] such that weight2_to_target vanishes."""
+		U2t = self.U_to_target()
+		D = np.diag(U2t)
+		newD = rank1tensor_approx(np.diag(U2t).reshape(2,2)).reshape(4)
+		self.Vs[self.N] = np.diag(newD.conj() / np.abs(newD)) @ self.Utarget
+		self.invalidate_cache_at_point(self.N)
+		self.check_consistency()
+
+
 	##	compute_weight2_at_step() and compute_weight2_to_target() derived from UnitaryChain_MxCompWeight
 
 
@@ -961,7 +1004,6 @@ From (-i)log(U),
 
 
 ################################################################################
-# TODO, rename to two_qubits_UChain
 class three_qubits_UChain(UnitaryChain_MxCompWeight):
 	pass
 	## TODO
