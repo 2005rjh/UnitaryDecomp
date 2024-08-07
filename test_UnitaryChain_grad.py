@@ -29,6 +29,47 @@ def init_RNG(rand_seed):
 
 
 
+def test_2Q_subdiv():
+	print("== test_2Q_subdiv() ==")
+	Rabi1 = 0.23; Rabi2 = 1.3; penalty = 3.7
+
+	#print("== Load CtrlZ with 3-step construction.")
+	UC = two_qubits_unitary(CntrlZ);
+	UC.set_coef(Rabi1 = Rabi1, Rabi2 = Rabi2, penalty = penalty)
+	UC.load_from_Ulist([ np.kron( [[1,-1],[1,1]], [[1,-1],[1,1]] )/2. ,
+		np.array([ [1,0,0,1j], [0,1,1j,0], [0,1j,1,0], [1j,0,0,1] ])/np.sqrt(2) ,
+		np.kron( [[1,1],[-1,1]], [[1,1],[-1,1]] ) / 2. ])
+	UC.check_consistency()
+	print(UC.str(verbose = 2))
+
+	def assert_close(a, b, tol=1e-13):
+		assert np.all(np.abs(a-b) <= tol)
+	exp_weight2 = [ Rabi1**2 / 2, Rabi2**2 / 2, Rabi1**2 / 2 ]
+
+	assert_close( UC.weight2_at_step(0) , exp_weight2[0] )
+	assert_close( UC.weight2_at_step(1) , exp_weight2[1] )
+	assert_close( UC.weight2_at_step(2) , exp_weight2[2] )
+	assert_close( UC.weight2_to_target() , 0. )
+	UC.subdivide_every_step([2,3,1])
+	UC.check_consistency()
+	print(UC.str(verbose = 2))
+	assert UC.N == 6
+	##	test two_qubits_unitary.decomp_jlogU
+	assert_close( UC.decomp_jlogU(UC.jlogU(0))[0] , [exp_weight2[0]/4,0,0] )
+	assert_close( UC.decomp_jlogU(UC.jlogU(1))[0] , [exp_weight2[0]/4,0,0] )
+	assert_close( UC.decomp_jlogU(UC.jlogU(2))[0] , [0,exp_weight2[1]/9,0] )
+	assert_close( UC.decomp_jlogU(UC.jlogU(3))[0] , [0,exp_weight2[1]/9,0] )
+	assert_close( UC.decomp_jlogU(UC.jlogU(4))[0] , [0,exp_weight2[1]/9,0] )
+	assert_close( UC.decomp_jlogU(UC.jlogU(5))[0] , [exp_weight2[2]  ,0,0] )
+	assert_close( UC.weight2_to_target() , 0. )
+	for s in range(UC.N):
+		jlogU = UC.jlogU(s)
+		diff = np.max(np.abs( sp.linalg.expm(1j * jlogU) -  UC.U(s) ))
+		print("Step {}:  | exp[logU] - U | = {}".format( s, diff ))
+		assert diff < 1e-14
+
+
+
 def check_grad_weight2_to_target(par):
 	"""Check the function compute_grad_weight2_to_target()."""
 	rand_seed, tol_factor = par
@@ -136,46 +177,6 @@ def check_grad_total_weight2(par):
 
 
 
-##	Maybe move this to another file
-def test_subdiv():
-	print("test_subdiv()")
-	Rabi1 = 0.23; Rabi2 = 1.3; penalty = 3.7
-
-	#print("== Load CtrlZ with 3-step construction.")
-	UC = two_qubits_unitary(CntrlZ);
-	UC.set_coef(Rabi1 = Rabi1, Rabi2 = Rabi2, penalty = penalty)
-	UC.load_from_Ulist([ np.kron( [[1,-1],[1,1]], [[1,-1],[1,1]] )/2. ,
-		np.array([ [1,0,0,1j], [0,1,1j,0], [0,1j,1,0], [1j,0,0,1] ])/np.sqrt(2) ,
-		np.kron( [[1,1],[-1,1]], [[1,1],[-1,1]] ) / 2. , ])
-	UC.check_consistency()
-	print(UC.str(verbose = 2))
-
-	def assert_close(a, b, tol=1e-13):
-		assert abs(a-b) <= tol
-	exp_weight2 = [ Rabi1**2 / 2, Rabi2**2 / 2, Rabi1**2 / 2 ]
-
-	assert_close( UC.weight2_at_step(0) , exp_weight2[0] )
-	assert_close( UC.weight2_at_step(1) , exp_weight2[1] )
-	assert_close( UC.weight2_at_step(2) , exp_weight2[2] )
-	assert_close( UC.weight2_to_target() , 0. )
-	UC.subdivide_every_step([2,3,1])
-	UC.check_consistency()
-	print(UC.str(verbose = 2))
-	assert UC.N == 6
-	assert_close( UC.weight2_at_step(0) , exp_weight2[0] / 4 )
-	assert_close( UC.weight2_at_step(1) , exp_weight2[0] / 4 )
-	assert_close( UC.weight2_at_step(2) , exp_weight2[1] / 9 )
-	assert_close( UC.weight2_at_step(3) , exp_weight2[1] / 9 )
-	assert_close( UC.weight2_at_step(4) , exp_weight2[1] / 9 )
-	assert_close( UC.weight2_at_step(5) , exp_weight2[2] )
-	assert_close( UC.weight2_to_target() , 0. )
-	for s in range(UC.N):
-		jlogU = UC.jlogU(s)
-		diff = np.max(np.abs( sp.linalg.expm(1j * jlogU) -  UC.U(s) ))
-		print("Step {}:  | exp[logU] - U | = {}".format( s, diff ))
-		assert diff < 1e-14
-
-
 def check_UC_unitarize(par):
 	cls, sigma, RNG_seed = par
 	RNG = init_RNG(RNG_seed)
@@ -273,8 +274,9 @@ if __name__ == "__main__":
 	np.set_printoptions(linewidth=2000, precision=4, threshold=10000, suppress=False)
 
 	if 1:		# test derivative
+		pass
 #		for t,c in t_grad_weight2_list: t(c)
-#		test_subdiv()
-		for t,c in t_UC_unitarize_list:
-			t(c)
+#		test_2Q_subdiv()
+#		for t,c in t_UC_unitarize_list: t(c)
+	#TODO, add test for copy
 

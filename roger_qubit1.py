@@ -31,22 +31,7 @@ UC.set_coef(penalty=5.)
 UC.subdivide_at_step(0, 3)
 print(UC.str())
 
-if 0:		# old code, deprecated and won't really work anymore
-	UC.backup_Vs()
-	for itr in range(3000):
-		for i in range(1, 3):
-			old_w = UC.weight_total()
-			smallU = random_small_Unitary(2, RNG=RNG, sigma=0.05)
-			UC.Vs[i] = smallU @ UC.Vs[i]		# make sures to mulitply from the left
-			new_w = UC.weight_total()
-			if new_w > old_w:
-	#			print("{} -> {}  (reject)".format( old_w, new_w ))
-				UC.restore_from_backup_Vs()
-			else:
-	#			print("{} -> {}  (accept)".format( old_w, new_w ))
-				UC.backup_Vs()
-
-if 0:		# new working code
+if 0:		# randomized search
 	UCbk = UC.copy()
 	for itr in range(3000):
 		for i in range(1, UC.N+1):

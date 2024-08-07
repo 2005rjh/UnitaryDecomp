@@ -157,6 +157,7 @@ class UnitaryChain(object):
 
 		self.dtype = complex		## work everything out with complex numbers
 		self.Vs = [ np.eye(self.d, dtype=self.dtype), self.Utarget.astype(self.dtype, copy=True) ]
+		self.coef = {}
 		self.reset_cache()
 	##	specify UnitaryChain class because this __init__ is called by subclass' initializers, which at this point have not finished yet and so this object may not be subclass-consistent.
 		#UnitaryChain.check_consistency(self)		#optional
@@ -170,10 +171,13 @@ class UnitaryChain(object):
 		return c
 
 	def _deepcopy_to_c(self, c):
-		"""Helper for copy().  Can be overloaded for derived classes."""
+		"""Helper for copy().  Can be overloaded for derived classes.
+
+Note for derived class: if self.coef contains mutable data, then its wise to overload this function making deepcopy of such objects."""
 		c.N = N = self.N
 		c.dtype = self.dtype
 		c.Vs = [ self.Vs[i].copy() for i in range(N+1) ]
+		c.coef = self.coef.copy()
 		c.cache['U_decomp'] = self.cache['U_decomp'].copy()
 		##	somehow, recompuoting the weights is faster than copying the 'weights2' dictionary
 		#c.cache['weights2'] = self.cache['weights2'].copy()
@@ -186,6 +190,7 @@ class UnitaryChain(object):
 		dtype = self.dtype
 		Utarget = self.Utarget
 		Vs = self.Vs
+		coef = self.coef
 		cache = self.cache
 		output = { 'Utarget unitarity': None, 'Vs unitarity': np.zeros(N+1), 'U_decomp err': np.zeros(N+1), }
 		output['U_decomp err'].fill(-np.inf)
@@ -194,6 +199,7 @@ class UnitaryChain(object):
 		assert type(N) == int and N > 0
 		assert isinstance(Vs, list)
 		assert len(Vs) == N + 1
+		assert isinstance(coef, dict)
 	##	check cache structure
 		assert type(cache) == dict
 		assert type(cache['U_decomp']) == dict
@@ -242,6 +248,10 @@ class UnitaryChain(object):
 
 	def reset_cache(self):
 		self.cache = { 'U_decomp':{}, 'weights2':{}, 'fragile':{} }
+
+#TODO: use array instead of dict for weights2 cache
+	def reset_weight2_cache(self):
+		self.cache['weights2'] = {}
 
 	def invalidate_cache_at_step(self, s):
 		#TODO documentatation
@@ -652,7 +662,7 @@ This does not necessarily make weight_to_target vanish, since it doesn't enforce
 		U2t = self.U_to_target()
 		D = np.diag(U2t)
 		if np.any(np.abs(D) < 0.1): print("UnitaryChain_MxCompWeight.project_Vfinal():  Unreliable projection!")
-		self.Vs[N] = np.diag(D.conj() / np.abs(D)) @ self.Utarget
+		self.Vs[N] = (D.conj() / np.abs(D))[:, np.newaxis] * self.Utarget
 		self.invalidate_cache_at_point(N)
 
 
@@ -728,17 +738,15 @@ Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix
 		d = self.d
 		N = self.N
 		gradH = [ None ] * (N + 1)
+		gradHv = None		# to be set later
 	##	Check cache
 		if enforce_U2t_0weight:
-			if 'grad_w2 U2t0' in self.cache['fragile']:
-				gradHv = self.cache['fragile']['grad_w2 U2t0']
-				if output_form == 'MxList': return [ None ] + [ gradHv.reshape(N,d,d)[i] for i in range(N) ]
-				if output_form == 'vec': return gradHv
+			if 'grad_w2 U2t0' in self.cache['fragile']: gradHv = self.cache['fragile']['grad_w2 U2t0']
 		else:
-			if 'grad_w2' in self.cache['fragile']:
-				gradHv = self.cache['fragile']['grad_w2']
-				if output_form == 'MxList': return [ None ] + [ gradHv.reshape(N,d,d)[i] for i in range(N) ]
-				if output_form == 'vec': return gradHv
+			if 'grad_w2' in self.cache['fragile']: gradHv = self.cache['fragile']['grad_w2']
+		if gradHv is not None:		# the cache found something!
+			if output_form == 'MxList': return [ None ] + [ gradHv.reshape(N,d,d)[i] for i in range(N) ]
+			if output_form == 'vec': return gradHv
 	##	Collate gradient data
 		for s in range(N):
 			grHL, grHR = self.compute_grad_weight2_at_step(s)
@@ -757,6 +765,7 @@ Returns gradH, a list (length N+1), such that gradH[s] is a d*d Hermitian matrix
 			gradH[N] += self.compute_grad_weight2_to_target(U2t)
 	##	Vectorize
 		gradHv = np.array(gradH[1:]).reshape(-1)
+		gradHv.flags.writeable = False		# small safeguard against accidentally corrupting cache
 	## Cache and return
 		if enforce_U2t_0weight: self.cache['fragile']['grad_w2 U2t0'] = gradHv
 		else: self.cache['fragile']['grad_w2'] = gradHv
@@ -784,7 +793,6 @@ coefficients:
 	Rabi: the weight given to an X/Y (off diagonal) drives
 	k: the weight given to I,X (diagonal) drives
 """
-#TODO, make this a derived class of UnitaryChain_MxCompWeight
 
 	##	class variables
 	I2 = np.eye(2, dtype=float)
@@ -812,14 +820,13 @@ coefficients:
 			self.coef['penalty'] = float(penalty)
 		R1 = self.coef['Rabi']**2; pe = self.coef['penalty']**2
 		self.MxComp_weights2 = np.array([ pe, R1, R1, pe ])
-		self.cache['weights2'] = {}		# reset cached weights
+		self.reset_weight2_cache()
 		self.cache['fragile'] = {}		# reset cached gradients
 
 
 	def _deepcopy_to_c(self, c):
 		##	overloads (grand)parent class, this is a helper called by copy()
 		super()._deepcopy_to_c(c)
-		c.coef = self.coef.copy()
 		c.set_coef()
 
 
@@ -904,14 +911,13 @@ From (-i)log(U),
 			self.coef['penalty'] = float(penalty)
 		R1 = self.coef['Rabi1']**2; R2 = self.coef['Rabi2']**2; pe = self.coef['penalty']**2
 		self.MxComp_weights2 = np.array([ pe, R1, R1, pe, R1, 2*R2, 2*R2, pe, R1, 2*R2, 2*R2, pe, pe, pe, pe, pe ])
-		self.cache['weights2'] = {}		# reset cached weights
+		self.reset_weight2_cache()
 		self.cache['fragile'] = {}		# reset cached gradients
 
 
 	def _deepcopy_to_c(self, c):
 		##	overloads (grand)parent class, this is a helper called by copy()
 		super()._deepcopy_to_c(c)
-		c.coef = self.coef.copy()
 		c.set_coef()		# call set_coef again after self.coef has been updated
 
 
@@ -942,41 +948,60 @@ From (-i)log(U),
 #	#TODO check_consistency to check for coef
 
 
-	##	TODO
-	##	def decomp_jlogU(jlogU):
+	def decomp_jlogU(self, jlogU):
+		"""Decompose jlogU (a matrix) into its Rabi1, Rabi2, and penalty components.
+
+Returns a tuple (weight2_decomp, jlogU_decomp).
+
+weight2_decomp is a 3-array, jlogU_decomp is a list (len 3) of matrices.
+The elements corresponds to, respectively, 1-body Rabi terms, 2-body Rabi terms, and penalty terms.
+Their sum, i.e. np.sum(weight2_decomp) and jlogU_decomp[0] + jlogU_decomp[1] + jlogU_decomp[2], gives weight2(jlogU) and jlogU, respectively.
+"""
+		jlogUT = jlogU.conj()
+		comps = [ two_qubits_unitary.R1_comps, two_qubits_unitary.R2_comps, two_qubits_unitary.pe_comps ]
+		jlogU_decomp = [ None ] * 3
+		weight2_decomp = np.zeros(3, dtype=float)
+		for c in range(3):
+			MxComps = (2/np.pi) * np.array([ comps[c][i] * np.sum(self.ConjMxComp_list[i] * jlogUT) for i in range(16) ]).real
+			jlogU_decomp[c] = np.tensordot(MxComps, self.MxComp_list, axes=[[0],[0]]) / 2
+			weight2_decomp[c] = np.sum(MxComps**2 * self.MxComp_weights2)
+		return weight2_decomp, jlogU_decomp
 
 
 	def step_str(self, s, verbose=3):
 		outstr = ""
 		if verbose < 1: return ""
-		outstr += "Step {:2d}:  \t".format(s)
 		jlogU = self.jlogU(s)
-		jlogUT = jlogU.conj()
-		##	MxComp_weights2 = [ pe, R1, R1, pe, R1, 2*R2, 2*R2, pe, R1, 2*R2, 2*R2, pe, pe, pe, pe, pe ]
-		R1_comps = np.array([0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
-		R2_comps = np.array([0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0])
-		pe_comps = np.ones(16) - R1_comps - R2_comps
-		comps = [ R1_comps, R2_comps, pe_comps ]
-		wsum_str = "weight2 = {} = ".format( self.weight2_at_step(s) )
-		mxsum_str = stringtools.joinstr([ "  ", zero_real_if_close(jlogU) ])
-		for c in range(3):
-			MxComps = (2/np.pi) * np.array([ comps[c][i] * np.sum(self.ConjMxComp_list[i] * jlogUT) for i in range(16) ]).real
-			M = np.tensordot(MxComps, self.MxComp_list, axes=[[0],[0]]) / 2
-			if c > 0: wsum_str += " + "
-			wsum_str += str(np.sum(MxComps**2 * self.MxComp_weights2))
-			if verbose >= 3: mxsum_str += "\n" + stringtools.joinstr([ "   + pi * " if c > 0 else "   = pi * ", zero_real_if_close(M) ])
-		if verbose >= 3: mxsum_str += "\n"
-		outstr += "(" + wsum_str + ")"
-		if verbose >= 2: outstr += "\n" + mxsum_str
+		weight2_decomp, jlogU_decomp = self.decomp_jlogU(jlogU)
+		outstr += "Step {:2d}:  \t(weights2 = {} = {})".format(s, self.weight2_at_step(s), " + ".join(map(str, weight2_decomp)))
+		if verbose >= 2: outstr += "\n" + stringtools.joinstr([ "  ", zero_real_if_close(jlogU) ])
+		if verbose >= 3:
+			outstr += "\n" + "\n".join([ stringtools.joinstr([ "   = pi * " if c == 0 else "   + pi * ", zero_real_if_close(jlogU_decomp[c]) ]) for c in range(3) ]) + "\n"
+#		jlogUT = jlogU.conj()
+#		##	MxComp_weights2 = [ pe, R1, R1, pe, R1, 2*R2, 2*R2, pe, R1, 2*R2, 2*R2, pe, pe, pe, pe, pe ]
+#		R1_comps = np.array([0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+#		R2_comps = np.array([0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0])
+#		pe_comps = np.ones(16) - R1_comps - R2_comps
+#		comps = [ R1_comps, R2_comps, pe_comps ]
+#		wsum_str = "weight2 = {} = ".format( self.weight2_at_step(s) )
+#		mxsum_str = stringtools.joinstr([ "  ", zero_real_if_close(jlogU) ])
+#		for c in range(3):
+#			MxComps = (2/np.pi) * np.array([ comps[c][i] * np.sum(self.ConjMxComp_list[i] * jlogUT) for i in range(16) ]).real
+#			M = np.tensordot(MxComps, self.MxComp_list, axes=[[0],[0]]) / 2
+#			if c > 0: wsum_str += " + "
+#			wsum_str += str(np.sum(MxComps**2 * self.MxComp_weights2))
+#			if verbose >= 3: mxsum_str += "\n" + stringtools.joinstr([ "   + pi * " if c > 0 else "   = pi * ", zero_real_if_close(M) ])
+#		if verbose >= 3: mxsum_str += "\n"
+#		outstr += "\n[old] (" + wsum_str + ")"
+#		if verbose >= 2: outstr += "\n" + mxsum_str
 		return outstr
 
 
 	def force_weight2t_to_zero(self):
 		"""Fixes Vs[N] such that weight2_to_target vanishes."""
 		U2t = self.U_to_target()
-		D = np.diag(U2t)
 		newD = rank1tensor_approx(np.diag(U2t).reshape(2,2)).reshape(4)
-		self.Vs[self.N] = np.diag(newD.conj() / np.abs(newD)) @ self.Utarget
+		self.Vs[self.N] = (newD.conj() / np.abs(newD))[:, np.newaxis] * self.Utarget
 		self.invalidate_cache_at_point(self.N)
 		self.check_consistency()
 
